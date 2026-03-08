@@ -1,30 +1,33 @@
+import 'server.dart';
+
 sealed class LoginState {
   const LoginState();
 }
 
-class LoginStateLoading extends LoginState {
-  const LoginStateLoading();
+class Authenticating extends LoginState {
+  const Authenticating();
 }
 
-class LoginStateServerSelection extends LoginState {
-  const LoginStateServerSelection();
+class RequireSignIn extends LoginState {
+  const RequireSignIn();
 }
 
-class LoginStateUserSelection extends LoginState {
-  final String serverId;
-  const LoginStateUserSelection({required this.serverId});
+class ServerUnavailable extends LoginState {
+  const ServerUnavailable();
 }
 
-class LoginStateAuthenticated extends LoginState {
+class VersionNotSupported extends LoginState {
+  final Server server;
+  const VersionNotSupported({required this.server});
+}
+
+class ApiClientError extends LoginState {
+  final String error;
+  const ApiClientError({required this.error});
+}
+
+class Authenticated extends LoginState {
   final String userId;
   final String serverId;
-  const LoginStateAuthenticated({
-    required this.userId,
-    required this.serverId,
-  });
-}
-
-class LoginStateError extends LoginState {
-  final String message;
-  const LoginStateError({required this.message});
+  const Authenticated({required this.userId, required this.serverId});
 }

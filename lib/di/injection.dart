@@ -3,6 +3,7 @@ import 'package:jellyfin_preference/jellyfin_preference.dart';
 import 'package:server_core/server_core.dart';
 import 'package:uuid/uuid.dart';
 
+import '../auth/store/authentication_store.dart';
 import 'modules/app_module.dart';
 import 'modules/auth_module.dart';
 import 'modules/server_module.dart';
@@ -32,6 +33,7 @@ Future<void> configureDependencies() async {
 
   registerServerModule();
   registerAuthModule();
+  await getIt<AuthenticationStore>().init();
   registerPlaybackModule();
   registerAppModule();
 }

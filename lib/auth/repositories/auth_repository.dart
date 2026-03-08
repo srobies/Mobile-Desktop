@@ -1,51 +1,165 @@
 import 'dart:async';
 
+import 'package:dio/dio.dart';
+import 'package:logger/logger.dart';
+import 'package:server_core/server_core.dart';
+
 import '../models/login_state.dart';
-import 'server_repository.dart';
+import '../models/user.dart';
+import '../store/authentication_store.dart';
+import '../store/authentication_preferences.dart';
 import 'session_repository.dart';
 import 'user_repository.dart';
 
 class AuthRepository {
-  final ServerRepository _serverRepository;
+  final AuthenticationStore _authStore;
+  final AuthenticationPreferences _authPrefs;
   final SessionRepository _sessionRepository;
   final UserRepository _userRepository;
+  final _logger = Logger();
 
   final _stateController = StreamController<LoginState>.broadcast();
 
   AuthRepository(
-    this._serverRepository,
+    this._authStore,
+    this._authPrefs,
     this._sessionRepository,
     this._userRepository,
   );
 
   Stream<LoginState> get stateStream => _stateController.stream;
 
-  Future<void> restoreSession() async {
-    _stateController.add(const LoginStateLoading());
-    await _serverRepository.loadServers();
-    if (_serverRepository.servers.isEmpty) {
-      _stateController.add(const LoginStateServerSelection());
-      return;
-    }
-    _stateController.add(const LoginStateServerSelection());
-  }
-
-  Future<void> login(String serverId, String username, String password) async {
-    _stateController.add(const LoginStateLoading());
+  Future<LoginState> authenticate({
+    required MediaServerClient client,
+    required String serverId,
+    required String username,
+    required String password,
+  }) async {
+    _stateController.add(const Authenticating());
     try {
-      _stateController.add(LoginStateAuthenticated(
-        userId: '',
+      final result = await client.authApi.authenticateByName(
+        username,
+        password,
+      );
+      return _handleAuthResult(
+        result: result,
+        client: client,
         serverId: serverId,
-      ));
+        fallbackName: username,
+      );
+    } on DioException catch (e) {
+      return _handleDioError(e);
     } catch (e) {
-      _stateController.add(LoginStateError(message: e.toString()));
+      _logger.e('Authentication failed', error: e);
+      final state = ApiClientError(error: e.toString());
+      _stateController.add(state);
+      return state;
     }
   }
 
-  Future<void> logout() async {
+  Future<LoginState> authenticateWithQuickConnect({
+    required MediaServerClient client,
+    required String serverId,
+    required String secret,
+  }) async {
+    _stateController.add(const Authenticating());
+    try {
+      final result = await client.authApi.authenticateWithQuickConnect(secret);
+      return _handleAuthResult(
+        result: result,
+        client: client,
+        serverId: serverId,
+        fallbackName: '',
+      );
+    } on DioException catch (e) {
+      return _handleDioError(e);
+    } catch (e) {
+      _logger.e('QuickConnect auth failed', error: e);
+      final state = ApiClientError(error: e.toString());
+      _stateController.add(state);
+      return state;
+    }
+  }
+
+  Future<LoginState> _handleAuthResult({
+    required Map<String, dynamic> result,
+    required MediaServerClient client,
+    required String serverId,
+    required String fallbackName,
+  }) async {
+    final accessToken = result['AccessToken'] as String?;
+    final userJson = result['User'] as Map<String, dynamic>?;
+    final userId = userJson?['Id'] as String? ?? result['UserId'] as String?;
+    final userName = userJson?['Name'] as String? ?? fallbackName;
+    final imageTag =
+        (userJson?['PrimaryImageTag'] as String?) ??
+        ((userJson?['ImageTags'] as Map<String, dynamic>?)?['Primary']
+            as String?);
+
+    if (accessToken == null || userId == null) {
+      const state = ApiClientError(error: 'Invalid auth response');
+      _stateController.add(state);
+      return state;
+    }
+
+    client.accessToken = accessToken;
+    client.userId = userId;
+
+    final user = PrivateUser(
+      id: userId,
+      name: userName,
+      serverId: serverId,
+      accessToken: accessToken,
+      lastUsed: DateTime.now(),
+      imageTag: imageTag,
+    );
+
+    await _authStore.putUser(user);
+    await _authPrefs.setLastServerId(serverId);
+    await _authPrefs.setLastUserId(userId);
+    _userRepository.setCurrentUser(user);
+
+    final state = Authenticated(userId: userId, serverId: serverId);
+    _stateController.add(state);
+    return state;
+  }
+
+  LoginState _handleDioError(DioException e) {
+    final statusCode = e.response?.statusCode;
+    if (statusCode == 401) {
+      final state = ApiClientError(error: 'Invalid username or password');
+      _stateController.add(state);
+      return state;
+    }
+    if (e.type == DioExceptionType.connectionTimeout ||
+        e.type == DioExceptionType.receiveTimeout) {
+      const state = ServerUnavailable();
+      _stateController.add(state);
+      return state;
+    }
+    final state = ApiClientError(error: e.message ?? 'Connection failed');
+    _stateController.add(state);
+    return state;
+  }
+
+  Future<void> logout(MediaServerClient client) async {
+    try {
+      await client.authApi.logout();
+    } catch (_) {}
+
+    final user = _userRepository.currentUser;
+    if (user != null) {
+      await _authStore.removeUser(user.serverId, user.id);
+    }
+
     _userRepository.setCurrentUser(null);
-    await _sessionRepository.clearSession();
-    _stateController.add(const LoginStateServerSelection());
+    await _sessionRepository.destroyCurrentSession();
+    _stateController.add(const RequireSignIn());
+  }
+
+  String? getUserImageUrl(MediaServerClient client, User user) {
+    if (user.imageTag == null) return null;
+    return client.imageApi.getUserImageUrl(user.id);
   }
 
   void dispose() {
