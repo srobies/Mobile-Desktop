@@ -1,6 +1,7 @@
 import 'dart:async';
 
 import 'package:flutter/material.dart';
+import 'package:flutter/services.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 import 'package:server_core/server_core.dart';
@@ -14,6 +15,8 @@ import '../../../data/services/media_server_client_factory.dart';
 import '../../navigation/destinations.dart';
 import '../../widgets/login_scaffold.dart';
 
+const _kAccent = Color(0xFF00A4DC);
+
 class LoginScreen extends StatefulWidget {
   final String serverId;
   final String? prefillUsername;
@@ -24,7 +27,7 @@ class LoginScreen extends StatefulWidget {
   State<LoginScreen> createState() => _LoginScreenState();
 }
 
-class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStateMixin {
+class _LoginScreenState extends State<LoginScreen> {
   final _usernameController = TextEditingController();
   final _passwordController = TextEditingController();
   final _serverRepo = GetIt.instance<ServerRepository>();
@@ -32,17 +35,26 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   final _sessionRepo = GetIt.instance<SessionRepository>();
   final _clientFactory = GetIt.instance<MediaServerClientFactory>();
 
+  final _usernameFocus = FocusNode();
+  final _passwordFocus = FocusNode();
+  final _signInFocus = FocusNode();
+  final _backFocus = FocusNode();
+  final _qcBtnFocus = FocusNode();
+  final _pwBtnFocus = FocusNode();
+
   Server? _server;
   MediaServerClient? _client;
   bool _isLoading = false;
   String? _errorMessage;
 
-  TabController? _tabController;
   bool _supportsQuickConnect = false;
+  bool _showQuickConnect = true;
 
   Timer? _quickConnectTimer;
   String? _quickConnectCode;
   String? _quickConnectSecret;
+
+  bool get _hasUsername => widget.prefillUsername != null;
 
   @override
   void initState() {
@@ -50,6 +62,7 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     if (widget.prefillUsername != null) {
       _usernameController.text = widget.prefillUsername!;
     }
+    _setupFocusHandlers();
     _initServer();
   }
 
@@ -57,9 +70,48 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
   void dispose() {
     _usernameController.dispose();
     _passwordController.dispose();
+    _usernameFocus.dispose();
+    _passwordFocus.dispose();
+    _signInFocus.dispose();
+    _backFocus.dispose();
+    _qcBtnFocus.dispose();
+    _pwBtnFocus.dispose();
     _quickConnectTimer?.cancel();
-    _tabController?.dispose();
     super.dispose();
+  }
+
+  void _setupFocusHandlers() {
+    _usernameFocus.onKeyEvent = (node, event) => _verticalNav(
+      event,
+      up: _supportsQuickConnect ? _pwBtnFocus : null,
+      down: _passwordFocus,
+    );
+    _passwordFocus.onKeyEvent = (node, event) => _verticalNav(
+      event,
+      up: _hasUsername
+          ? (_supportsQuickConnect ? _pwBtnFocus : null)
+          : _usernameFocus,
+      down: _signInFocus,
+    );
+  }
+
+  KeyEventResult _verticalNav(
+    KeyEvent event, {
+    FocusNode? up,
+    FocusNode? down,
+  }) {
+    if (event is! KeyDownEvent && event is! KeyRepeatEvent) {
+      return KeyEventResult.ignored;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowUp && up != null) {
+      up.requestFocus();
+      return KeyEventResult.handled;
+    }
+    if (event.logicalKey == LogicalKeyboardKey.arrowDown && down != null) {
+      down.requestFocus();
+      return KeyEventResult.handled;
+    }
+    return KeyEventResult.ignored;
   }
 
   Future<void> _initServer() async {
@@ -82,27 +134,46 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     );
 
     if (mounted) {
+      final supportsQC = features.supportsQuickConnect;
       setState(() {
         _server = server;
         _client = client;
-        _supportsQuickConnect = features.supportsQuickConnect;
+        _supportsQuickConnect = supportsQC;
+        _showQuickConnect = supportsQC;
       });
-      if (_supportsQuickConnect) {
-        _tabController = TabController(length: 2, vsync: this, initialIndex: 1);
-        _tabController!.addListener(_onTabChanged);
+      if (supportsQC) {
+        _startQuickConnect();
+      } else {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (mounted) {
+            (_hasUsername ? _passwordFocus : _usernameFocus).requestFocus();
+          }
+        });
       }
     }
   }
 
-  void _onTabChanged() {
-    if (_tabController!.indexIsChanging) {
-      setState(() => _errorMessage = null);
-    }
-    if (_tabController!.index == 0 && _quickConnectTimer == null) {
-      _startQuickConnect();
-    } else if (_tabController!.index != 0) {
-      _stopQuickConnect();
-    }
+  void _selectQuickConnect() {
+    if (_showQuickConnect) return;
+    setState(() {
+      _showQuickConnect = true;
+      _errorMessage = null;
+    });
+    if (_quickConnectTimer == null) _startQuickConnect();
+  }
+
+  void _selectPassword() {
+    if (!_showQuickConnect) return;
+    _stopQuickConnect();
+    setState(() {
+      _showQuickConnect = false;
+      _errorMessage = null;
+    });
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        (_hasUsername ? _passwordFocus : _usernameFocus).requestFocus();
+      }
+    });
   }
 
   Future<void> _startQuickConnect() async {
@@ -122,7 +193,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         });
       }
 
-      _quickConnectTimer = Timer.periodic(const Duration(seconds: 5), (_) => _pollQuickConnect());
+      _quickConnectTimer = Timer.periodic(
+        const Duration(seconds: 5),
+        (_) => _pollQuickConnect(),
+      );
     } catch (e) {
       if (mounted) setState(() => _errorMessage = 'QuickConnect unavailable');
     }
@@ -144,7 +218,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           secret: secret,
         );
         if (authResult is Authenticated && mounted) {
-          await _sessionRepo.switchCurrentSession(serverId: authResult.serverId, userId: authResult.userId);
+          await _sessionRepo.switchCurrentSession(
+            serverId: authResult.serverId,
+            userId: authResult.userId,
+          );
           if (mounted) context.go(Destinations.home);
         }
       }
@@ -182,7 +259,10 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
 
     switch (result) {
       case Authenticated():
-        await _sessionRepo.switchCurrentSession(serverId: result.serverId, userId: result.userId);
+        await _sessionRepo.switchCurrentSession(
+          serverId: result.serverId,
+          userId: result.userId,
+        );
         if (mounted) context.go(Destinations.home);
       case ApiClientError(:final error):
         setState(() {
@@ -218,46 +298,116 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
         mainAxisSize: MainAxisSize.min,
         children: [
           Text(
-            'Sign in',
-            style: Theme.of(context).textTheme.headlineSmall?.copyWith(fontWeight: FontWeight.bold),
+            'Sign In',
+            style: Theme.of(context).textTheme.headlineSmall?.copyWith(
+              fontWeight: FontWeight.bold,
+            ),
           ),
           const SizedBox(height: 4),
           Text(
-            'Connect to ${_server!.name}',
+            'Connecting to ${_server!.name}',
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: Colors.white.withValues(alpha: 0.5),
             ),
           ),
           const SizedBox(height: 24),
           if (_supportsQuickConnect) ...[
-            TabBar(
-              controller: _tabController,
-              tabs: const [Tab(text: 'Quick Connect'), Tab(text: 'Password')],
-              indicatorColor: const Color(0xFF00A4DC),
-              labelColor: Colors.white,
-              unselectedLabelColor: Colors.white.withValues(alpha: 0.5),
-              dividerHeight: 0,
-            ),
+            _buildToggleRow(),
             const SizedBox(height: 24),
-            AnimatedBuilder(
-              animation: _tabController!,
-              builder: (context, _) => _tabController!.index == 0
-                  ? _buildQuickConnectContent()
-                  : _buildCredentialsContent(),
-            ),
+            if (_showQuickConnect)
+              _buildQuickConnectContent()
+            else
+              _buildCredentialsContent(),
           ] else
             _buildCredentialsContent(),
-          const SizedBox(height: 16),
-          TextButton.icon(
-            onPressed: () => context.go('${Destinations.server}?serverId=${_server!.id}'),
-            icon: const Icon(Icons.arrow_back, size: 18),
-            label: const Text('Back'),
-            style: TextButton.styleFrom(
-              foregroundColor: Colors.white.withValues(alpha: 0.7),
-            ),
-          ),
         ],
       ),
+    );
+  }
+
+  Widget _buildToggleRow() {
+    return Row(
+      mainAxisAlignment: MainAxisAlignment.center,
+      children: [
+        _buildToggleButton(
+          label: 'Quick Connect',
+          isSelected: _showQuickConnect,
+          focusNode: _qcBtnFocus,
+          onPressed: _selectQuickConnect,
+        ),
+        const SizedBox(width: 12),
+        _buildToggleButton(
+          label: 'Password',
+          isSelected: !_showQuickConnect,
+          focusNode: _pwBtnFocus,
+          onPressed: _selectPassword,
+        ),
+      ],
+    );
+  }
+
+  Widget _buildToggleButton({
+    required String label,
+    required bool isSelected,
+    required FocusNode focusNode,
+    required VoidCallback onPressed,
+  }) {
+    if (isSelected) {
+      return SizedBox(
+        width: 140,
+        child: FilledButton(
+          focusNode: focusNode,
+          onPressed: onPressed,
+          style: FilledButton.styleFrom(
+            backgroundColor: _kAccent,
+            foregroundColor: Colors.white,
+            padding: const EdgeInsets.symmetric(vertical: 12),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(24),
+            ),
+          ).copyWith(
+            side: WidgetStateProperty.resolveWith((states) {
+              if (states.contains(WidgetState.focused)) {
+                return const BorderSide(color: Colors.white, width: 2);
+              }
+              return null;
+            }),
+          ),
+          child: Text(label),
+        ),
+      );
+    }
+    return SizedBox(
+      width: 140,
+      child: OutlinedButton(
+        focusNode: focusNode,
+        onPressed: onPressed,
+        style: _outlinedFocusStyle(
+          padding: const EdgeInsets.symmetric(vertical: 12),
+        ),
+        child: Text(label),
+      ),
+    );
+  }
+
+  ButtonStyle _outlinedFocusStyle({required EdgeInsetsGeometry padding}) {
+    return OutlinedButton.styleFrom(
+      foregroundColor: Colors.white.withValues(alpha: 0.8),
+      padding: padding,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(24),
+      ),
+    ).copyWith(
+      side: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.focused)) {
+          return const BorderSide(color: _kAccent, width: 2);
+        }
+        return BorderSide(color: Colors.white.withValues(alpha: 0.2));
+      }),
+      foregroundColor: WidgetStateProperty.resolveWith((states) {
+        if (states.contains(WidgetState.focused)) return _kAccent;
+        return Colors.white.withValues(alpha: 0.8);
+      }),
     );
   }
 
@@ -265,37 +415,55 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: [
-        const Icon(Icons.devices, size: 48, color: Color(0xFF00A4DC)),
-        const SizedBox(height: 16),
-        const Text(
-          'Use your phone or another device\nto authorize this sign-in.',
+        Text(
+          "Enter this code on your server's web dashboard:",
+          style: Theme.of(context).textTheme.bodyMedium?.copyWith(
+            color: Colors.white.withValues(alpha: 0.7),
+          ),
           textAlign: TextAlign.center,
         ),
-        const SizedBox(height: 24),
-        if (_quickConnectCode != null)
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 16),
-            decoration: BoxDecoration(
-              borderRadius: BorderRadius.circular(16),
-              border: Border.all(color: const Color(0xFF00A4DC), width: 2),
-              color: const Color(0xFF00A4DC).withValues(alpha: 0.05),
+        const SizedBox(height: 20),
+        if (_quickConnectCode != null) ...[
+          Text(
+            _formatCode(_quickConnectCode!),
+            style: const TextStyle(
+              fontSize: 48,
+              fontWeight: FontWeight.bold,
+              letterSpacing: 8,
+              color: _kAccent,
+              fontFamily: 'monospace',
             ),
-            child: Text(
-              _formatCode(_quickConnectCode!),
-              style: const TextStyle(
-                fontSize: 48,
-                fontWeight: FontWeight.bold,
-                letterSpacing: 8,
-                fontFamily: 'monospace',
-              ),
+          ),
+          const SizedBox(height: 20),
+          SizedBox(
+            height: 24,
+            width: 24,
+            child: CircularProgressIndicator(
+              strokeWidth: 2,
+              color: _kAccent.withValues(alpha: 0.7),
             ),
-          )
-        else
+          ),
+          const SizedBox(height: 12),
+          Text(
+            'Waiting for authorization...',
+            style: Theme.of(context).textTheme.bodySmall?.copyWith(
+              color: Colors.white.withValues(alpha: 0.5),
+            ),
+          ),
+        ] else
           const CircularProgressIndicator(),
         if (_errorMessage != null) ...[
           const SizedBox(height: 16),
           Text(_errorMessage!, style: const TextStyle(color: Color(0xFFef4444))),
         ],
+        const SizedBox(height: 24),
+        _buildActionButton(
+          label: 'Back',
+          focusNode: _backFocus,
+          onPressed: () => context.go(
+            '${Destinations.server}?serverId=${_server!.id}',
+          ),
+        ),
       ],
     );
   }
@@ -305,27 +473,21 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
       mainAxisSize: MainAxisSize.min,
       crossAxisAlignment: CrossAxisAlignment.stretch,
       children: [
-        TextField(
-          controller: _usernameController,
-          decoration: const InputDecoration(
-            labelText: 'Username',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.person),
+        if (!_hasUsername) ...[
+          _buildTextField(
+            controller: _usernameController,
+            focusNode: _usernameFocus,
+            label: 'Username',
+            textInputAction: TextInputAction.next,
           ),
-          textInputAction: TextInputAction.next,
-          enabled: !_isLoading,
-        ),
-        const SizedBox(height: 16),
-        TextField(
+          const SizedBox(height: 16),
+        ],
+        _buildTextField(
           controller: _passwordController,
-          decoration: const InputDecoration(
-            labelText: 'Password',
-            border: OutlineInputBorder(),
-            prefixIcon: Icon(Icons.lock),
-          ),
+          focusNode: _passwordFocus,
+          label: 'Password',
           obscureText: true,
           textInputAction: TextInputAction.done,
-          enabled: !_isLoading,
           onSubmitted: (_) => _login(),
         ),
         if (_errorMessage != null) ...[
@@ -333,13 +495,85 @@ class _LoginScreenState extends State<LoginScreen> with SingleTickerProviderStat
           Text(_errorMessage!, style: const TextStyle(color: Color(0xFFef4444))),
         ],
         const SizedBox(height: 24),
-        FilledButton(
-          onPressed: _isLoading ? null : _login,
-          child: _isLoading
-              ? const SizedBox(height: 20, width: 20, child: CircularProgressIndicator(strokeWidth: 2))
-              : const Text('Sign In'),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            _buildActionButton(
+              label: 'Sign In',
+              focusNode: _signInFocus,
+              onPressed: _isLoading ? null : _login,
+              isLoading: _isLoading,
+            ),
+            const SizedBox(width: 12),
+            _buildActionButton(
+              label: 'Back',
+              focusNode: _backFocus,
+              onPressed: () => context.go(
+                '${Destinations.server}?serverId=${_server!.id}',
+              ),
+            ),
+          ],
         ),
       ],
+    );
+  }
+
+  Widget _buildTextField({
+    required TextEditingController controller,
+    required FocusNode focusNode,
+    required String label,
+    bool obscureText = false,
+    TextInputAction? textInputAction,
+    ValueChanged<String>? onSubmitted,
+  }) {
+    return TextField(
+      controller: controller,
+      focusNode: focusNode,
+      obscureText: obscureText,
+      textInputAction: textInputAction,
+      enabled: !_isLoading,
+      onSubmitted: onSubmitted,
+      style: const TextStyle(color: Colors.white),
+      decoration: InputDecoration(
+        labelText: label,
+        labelStyle: TextStyle(color: Colors.white.withValues(alpha: 0.5)),
+        filled: true,
+        fillColor: Colors.white.withValues(alpha: 0.08),
+        border: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        enabledBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: BorderSide(color: Colors.white.withValues(alpha: 0.1)),
+        ),
+        focusedBorder: OutlineInputBorder(
+          borderRadius: BorderRadius.circular(12),
+          borderSide: const BorderSide(color: _kAccent, width: 2),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildActionButton({
+    required String label,
+    required FocusNode focusNode,
+    required VoidCallback? onPressed,
+    bool isLoading = false,
+  }) {
+    return OutlinedButton(
+      focusNode: focusNode,
+      onPressed: onPressed,
+      style: _outlinedFocusStyle(
+        padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 24),
+      ),
+      child: isLoading
+          ? const SizedBox(
+              height: 20,
+              width: 20,
+              child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+            )
+          : Text(label),
     );
   }
 

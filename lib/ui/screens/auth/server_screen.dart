@@ -240,26 +240,41 @@ class _ServerScreenState extends State<ServerScreen> {
 
     if (!isDesktop) return listView;
 
-    return Row(
+    return Stack(
+      clipBehavior: Clip.none,
       children: [
-        IconButton(
-          onPressed: () => _scrollController.animateTo(
-            (_scrollController.offset - 150).clamp(0, _scrollController.position.maxScrollExtent),
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
+        listView,
+        Positioned(
+          left: -40,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: IconButton(
+              onPressed: () => _scrollController.animateTo(
+                (_scrollController.offset - 150).clamp(0, _scrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              ),
+              icon: const Icon(Icons.chevron_left, color: Colors.white54, size: 28),
+              splashRadius: 20,
+            ),
           ),
-          icon: const Icon(Icons.chevron_left, color: Colors.white54),
-          splashRadius: 20,
         ),
-        Expanded(child: listView),
-        IconButton(
-          onPressed: () => _scrollController.animateTo(
-            (_scrollController.offset + 150).clamp(0, _scrollController.position.maxScrollExtent),
-            duration: const Duration(milliseconds: 300),
-            curve: Curves.easeInOut,
+        Positioned(
+          right: -40,
+          top: 0,
+          bottom: 0,
+          child: Center(
+            child: IconButton(
+              onPressed: () => _scrollController.animateTo(
+                (_scrollController.offset + 150).clamp(0, _scrollController.position.maxScrollExtent),
+                duration: const Duration(milliseconds: 300),
+                curve: Curves.easeInOut,
+              ),
+              icon: const Icon(Icons.chevron_right, color: Colors.white54, size: 28),
+              splashRadius: 20,
+            ),
           ),
-          icon: const Icon(Icons.chevron_right, color: Colors.white54),
-          splashRadius: 20,
         ),
       ],
     );

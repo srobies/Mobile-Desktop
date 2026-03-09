@@ -1,4 +1,4 @@
-package org.jellyfin.jellyfin_client
+package org.moonfin.android
 
 import io.flutter.embedding.android.FlutterActivity
 
