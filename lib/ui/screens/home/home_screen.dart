@@ -14,6 +14,7 @@ import '../../widgets/info_area.dart';
 import '../../widgets/library_row.dart';
 import '../../widgets/media_card.dart';
 import '../../widgets/responsive_layout.dart';
+import '../../widgets/top_toolbar.dart';
 import 'home_view_model.dart';
 
 class HomeScreen extends StatelessWidget {
@@ -97,27 +98,17 @@ class _HomeShellState extends State<_HomeShell> {
 
     return Scaffold(
       backgroundColor: Colors.black,
-      extendBodyBehindAppBar: true,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        title: const Text('Moonfin'),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.search),
-            onPressed: () => context.push(Destinations.search),
-          ),
-          IconButton(
-            icon: const Icon(Icons.settings),
-            onPressed: () => context.push(Destinations.settings),
-          ),
-        ],
-      ),
       body: Stack(
         fit: StackFit.expand,
         children: [
           if (backdropEnabled) _Backdrop(url: _backdropUrl, blurAmount: blurAmount),
           const _GradientScrim(),
+          const Positioned(
+            left: 0,
+            right: 0,
+            top: 0,
+            child: TopToolbar(activeRoute: Destinations.home),
+          ),
           Positioned(
             left: 48,
             top: _infoAreaTop,
