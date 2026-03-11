@@ -6,8 +6,9 @@ const _textShadows = [Shadow(blurRadius: 4, color: Colors.black54)];
 
 class SimpleInfoRow extends StatelessWidget {
   final AggregatedItem item;
+  final bool showRating;
 
-  const SimpleInfoRow({super.key, required this.item});
+  const SimpleInfoRow({super.key, required this.item, this.showRating = true});
 
   @override
   Widget build(BuildContext context) {
@@ -37,7 +38,7 @@ class SimpleInfoRow extends StatelessWidget {
       children.add(_text(context, label));
     }
 
-    if (item.communityRating != null) {
+    if (showRating && item.communityRating != null) {
       children.add(_ratingChip(context, item.communityRating!));
     }
 

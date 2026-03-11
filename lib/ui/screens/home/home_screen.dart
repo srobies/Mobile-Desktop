@@ -4,6 +4,7 @@ import 'dart:ui';
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../data/models/aggregated_item.dart';
 import '../../../data/services/background_service.dart';
@@ -234,13 +235,14 @@ class _ContentRows extends StatelessWidget {
         if (row.isLoading) {
           return LibraryRow(title: row.title, children: const []);
         }
-        return LibraryRow(
-          title: row.title,
-          children: row.items.map((item) {
+        double maxCardHeight = 0;
+        final cards = row.items.map((item) {
             final ar = MediaCard.aspectRatioForType(item.type);
             final height = ar > 1
                 ? posterSize.landscapeHeight.toDouble()
                 : posterSize.portraitHeight.toDouble();
+            final cardHeight = height + 40;
+            if (cardHeight > maxCardHeight) maxCardHeight = cardHeight;
             final width = height * ar;
             final imageUrl = item.primaryImageTag != null
                 ? viewModel.imageApi.getPrimaryImageUrl(
@@ -262,9 +264,15 @@ class _ContentRows extends StatelessWidget {
               watchedBehavior: watchedBehavior,
               itemType: item.type,
               onFocus: () => onItemSelected(item),
-              onTap: () => onItemSelected(item),
+              onHoverStart: () => onItemSelected(item),
+              onLongPress: () => onItemSelected(item),
+              onTap: () => context.push(Destinations.item(item.id)),
             );
-          }).toList(),
+          }).toList();
+        return LibraryRow(
+          title: row.title,
+          rowHeight: maxCardHeight,
+          children: cards,
         );
       },
     );

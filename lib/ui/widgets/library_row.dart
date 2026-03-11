@@ -4,12 +4,14 @@ class LibraryRow extends StatelessWidget {
   final String title;
   final List<Widget> children;
   final VoidCallback? onSeeAll;
+  final double? rowHeight;
 
   const LibraryRow({
     super.key,
     required this.title,
     required this.children,
     this.onSeeAll,
+    this.rowHeight,
   });
 
   @override
@@ -33,7 +35,7 @@ class LibraryRow extends StatelessWidget {
           ),
         ),
         SizedBox(
-          height: 220,
+          height: rowHeight ?? 220,
           child: children.isEmpty
               ? Center(
                   child: Text(
