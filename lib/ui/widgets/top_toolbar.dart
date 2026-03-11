@@ -24,16 +24,16 @@ const _kToolbarHeightMobile = 60.0;
 const _kOverscanH = 48.0;
 const _kOverscanV = 27.0;
 const _kAccent = Color(0xFF00A4DC);
-const _kAvatarSizeDesktop = 44.0;
-const _kAvatarSizeMobile = 36.0;
+const _kAvatarSize = 40.0;
 const _kPillRadius = 36.0;
 const _kButtonSpacing = 12.0;
 const _kButtonSpacingMobile = 8.0;
 
 class TopToolbar extends StatefulWidget {
   final String? activeRoute;
+  final bool showBackButton;
 
-  const TopToolbar({super.key, this.activeRoute});
+  const TopToolbar({super.key, this.activeRoute, this.showBackButton = false});
 
   @override
   State<TopToolbar> createState() => _TopToolbarState();
@@ -146,13 +146,36 @@ class _TopToolbarState extends State<TopToolbar> {
   Widget _buildStart() {
     return FocusTraversalOrder(
       order: const NumericFocusOrder(0),
-      child: _buildAvatar(),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          _buildAvatar(),
+          if (widget.showBackButton) ...[
+            const SizedBox(width: 8),
+            GestureDetector(
+              onTap: () => context.pop(),
+              child: Container(
+                width: 40,
+                height: 40,
+                decoration: BoxDecoration(
+                  color: Colors.white.withValues(alpha: 0.1),
+                  shape: BoxShape.circle,
+                ),
+                child: Icon(
+                  Icons.arrow_back,
+                  size: 20,
+                  color: Colors.white.withValues(alpha: 0.9),
+                ),
+              ),
+            ),
+          ],
+        ],
+      ),
     );
   }
 
   Widget _buildAvatar() {
-    final isMobile = PlatformDetection.useMobileUi;
-    final avatarSize = isMobile ? _kAvatarSizeMobile : _kAvatarSizeDesktop;
+    const avatarSize = _kAvatarSize;
 
     return Focus(
       focusNode: _avatarFocus,

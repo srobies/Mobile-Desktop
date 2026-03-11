@@ -24,8 +24,9 @@ const _kAccent = Color(0xFF00A4DC);
 class LeftSidebar extends StatefulWidget {
   final String? activeRoute;
   final FocusNode? contentFocusNode;
+  final bool showBackButton;
 
-  const LeftSidebar({super.key, this.activeRoute, this.contentFocusNode});
+  const LeftSidebar({super.key, this.activeRoute, this.contentFocusNode, this.showBackButton = false});
 
   @override
   State<LeftSidebar> createState() => _LeftSidebarState();
@@ -208,21 +209,45 @@ class _LeftSidebarState extends State<LeftSidebar> {
             child: SafeArea(
               child: Padding(
                 padding: const EdgeInsets.all(8),
-                child: GestureDetector(
-                  onTap: _toggle,
-                  child: Container(
-                    width: 40,
-                    height: 40,
-                    decoration: BoxDecoration(
-                      color: Colors.black.withValues(alpha: 0.4),
-                      shape: BoxShape.circle,
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    GestureDetector(
+                      onTap: _toggle,
+                      child: Container(
+                        width: 40,
+                        height: 40,
+                        decoration: BoxDecoration(
+                          color: Colors.black.withValues(alpha: 0.4),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          Icons.menu,
+                          size: 22,
+                          color: Colors.white.withValues(alpha: 0.8),
+                        ),
+                      ),
                     ),
-                    child: Icon(
-                      Icons.menu,
-                      size: 22,
-                      color: Colors.white.withValues(alpha: 0.8),
-                    ),
-                  ),
+                    if (widget.showBackButton) ...[
+                      const SizedBox(width: 6),
+                      GestureDetector(
+                        onTap: () => context.pop(),
+                        child: Container(
+                          width: 40,
+                          height: 40,
+                          decoration: BoxDecoration(
+                            color: Colors.black.withValues(alpha: 0.4),
+                            shape: BoxShape.circle,
+                          ),
+                          child: Icon(
+                            Icons.arrow_back,
+                            size: 20,
+                            color: Colors.white.withValues(alpha: 0.9),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ],
                 ),
               ),
             ),

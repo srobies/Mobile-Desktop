@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class FolderBrowseScreen extends StatelessWidget {
   final String folderId;
 
@@ -8,8 +10,11 @@ class FolderBrowseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Folder')),
-      body: const Center(child: Text('Folder contents will appear here')),
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: const Center(child: Text('Folder contents will appear here')),
+      ),
     );
   }
 }

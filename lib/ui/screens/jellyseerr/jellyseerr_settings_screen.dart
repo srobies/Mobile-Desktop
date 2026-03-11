@@ -3,6 +3,7 @@ import 'package:get_it/get_it.dart';
 import 'package:jellyfin_preference/jellyfin_preference.dart';
 
 import '../../../auth/repositories/session_repository.dart';
+import '../../widgets/navigation_layout.dart';
 
 /// Jellyseerr integration settings.
 ///
@@ -44,41 +45,47 @@ class _JellyseerrSettingsScreenState extends State<JellyseerrSettingsScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Jellyseerr Settings')),
-      body: ListView(
-        children: [
-          ListTile(
-            leading: const Icon(Icons.link),
-            title: const Text('Connection URL'),
-            subtitle: Text(_connectionUrl.isEmpty ? 'Not configured' : _connectionUrl),
-            onTap: _editConnectionUrl,
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: SafeArea(
+          child: ListView(
+            padding: const EdgeInsets.only(top: 80),
+            children: [
+              ListTile(
+                leading: const Icon(Icons.link),
+                title: const Text('Connection URL'),
+                subtitle: Text(_connectionUrl.isEmpty ? 'Not configured' : _connectionUrl),
+                onTap: _editConnectionUrl,
+              ),
+              const ListTile(
+                leading: Icon(Icons.security),
+                title: Text('Authentication'),
+                subtitle: Text('None'),
+              ),
+              SwitchListTile(
+                title: const Text('Show in Toolbar'),
+                subtitle: const Text('Display Jellyseerr button in the toolbar'),
+                secondary: const Icon(Icons.visibility),
+                value: _showInToolbar,
+                onChanged: (value) async {
+                  await _store.setBool(_showInToolbarKey, value);
+                  setState(() => _showInToolbar = value);
+                },
+              ),
+              SwitchListTile(
+                title: const Text('NSFW Filter'),
+                subtitle: const Text('Hide adult content'),
+                secondary: const Icon(Icons.shield),
+                value: _nsfwFilter,
+                onChanged: (value) async {
+                  await _store.setBool(_nsfwFilterKey, value);
+                  setState(() => _nsfwFilter = value);
+                },
+              ),
+            ],
           ),
-          const ListTile(
-            leading: Icon(Icons.security),
-            title: Text('Authentication'),
-            subtitle: Text('None'),
-          ),
-          SwitchListTile(
-            title: const Text('Show in Toolbar'),
-            subtitle: const Text('Display Jellyseerr button in the toolbar'),
-            secondary: const Icon(Icons.visibility),
-            value: _showInToolbar,
-            onChanged: (value) async {
-              await _store.setBool(_showInToolbarKey, value);
-              setState(() => _showInToolbar = value);
-            },
-          ),
-          SwitchListTile(
-            title: const Text('NSFW Filter'),
-            subtitle: const Text('Hide adult content'),
-            secondary: const Icon(Icons.shield),
-            value: _nsfwFilter,
-            onChanged: (value) async {
-              await _store.setBool(_nsfwFilterKey, value);
-              setState(() => _nsfwFilter = value);
-            },
-          ),
-        ],
+        ),
       ),
     );
   }

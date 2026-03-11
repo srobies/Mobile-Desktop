@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class MusicFavoritesScreen extends StatelessWidget {
   final String parentId;
 
@@ -8,8 +10,11 @@ class MusicFavoritesScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Favorite Tracks')),
-      body: const Center(child: Text('Favorite tracks will appear here')),
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: const Center(child: Text('Favorite tracks will appear here')),
+      ),
     );
   }
 }

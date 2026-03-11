@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class SearchScreen extends StatefulWidget {
   const SearchScreen({super.key});
 
@@ -19,19 +21,33 @@ class _SearchScreenState extends State<SearchScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: TextField(
-          controller: _searchController,
-          autofocus: true,
-          decoration: const InputDecoration(
-            hintText: 'Search...',
-            border: InputBorder.none,
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: SafeArea(
+          child: Column(
+            children: [
+              const SizedBox(height: 80),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 48),
+                child: TextField(
+                  controller: _searchController,
+                  autofocus: true,
+                  decoration: const InputDecoration(
+                    hintText: 'Search...',
+                    border: InputBorder.none,
+                  ),
+                  onChanged: (query) {},
+                ),
+              ),
+              const Expanded(
+                child: Center(
+                  child: Text('Search results will appear here'),
+                ),
+              ),
+            ],
           ),
-          onChanged: (query) {},
         ),
-      ),
-      body: const Center(
-        child: Text('Search results will appear here'),
       ),
     );
   }

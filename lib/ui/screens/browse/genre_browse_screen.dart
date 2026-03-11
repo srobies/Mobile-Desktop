@@ -12,6 +12,7 @@ import '../../../preference/user_preferences.dart';
 import '../../../util/platform_detection.dart';
 import '../../navigation/destinations.dart';
 import '../../widgets/media_card.dart';
+import '../../widgets/navigation_layout.dart';
 import '../../widgets/poster_size_settings_dialog.dart';
 
 const _navyBackground = Color(0xFF101528);
@@ -200,42 +201,44 @@ class _GenreBrowseScreenState extends State<GenreBrowseScreen> {
     final hasBackdrop = !isMobile && _backdropUrl != null;
     return Scaffold(
       backgroundColor: _navyBackground,
-      body: Stack(
-        children: [
-          if (hasBackdrop)
-            Positioned.fill(
-              child: AnimatedSwitcher(
-                duration: BackgroundService.transitionDuration,
-                child: CachedNetworkImage(
-                  key: ValueKey(_backdropUrl),
-                  imageUrl: _backdropUrl!,
-                  fit: BoxFit.cover,
-                  alignment: Alignment.topCenter,
-                  fadeInDuration: const Duration(milliseconds: 300),
-                  errorWidget: (_, __, ___) => const SizedBox.shrink(),
+      body: NavigationLayout(
+        showBackButton: true,
+        child: Stack(
+          children: [
+            if (hasBackdrop)
+              Positioned.fill(
+                child: AnimatedSwitcher(
+                  duration: BackgroundService.transitionDuration,
+                  child: CachedNetworkImage(
+                    key: ValueKey(_backdropUrl),
+                    imageUrl: _backdropUrl!,
+                    fit: BoxFit.cover,
+                    alignment: Alignment.topCenter,
+                    fadeInDuration: const Duration(milliseconds: 300),
+                    errorWidget: (_, __, ___) => const SizedBox.shrink(),
+                  ),
                 ),
               ),
-            ),
-          Positioned.fill(
-            child: Container(
-              color: _navyBackground.withAlpha(hasBackdrop ? 115 : 191),
-            ),
-          ),
-          Column(
-            children: [
-              _GenreHeader(
-                genreName: widget.genreName,
-                totalCount: _totalCount,
-                libraries: _libraries,
-                selectedLibraryId: _selectedLibraryId,
-                onLibraryChanged: _onLibraryChanged,
-                onSettings: _showSettingsDialog,
-                onBack: () => context.pop(),
+            Positioned.fill(
+              child: Container(
+                color: _navyBackground.withAlpha(hasBackdrop ? 115 : 191),
               ),
-              Expanded(child: _buildBody()),
-            ],
-          ),
-        ],
+            ),
+            Column(
+              children: [
+                _GenreHeader(
+                  genreName: widget.genreName,
+                  totalCount: _totalCount,
+                  libraries: _libraries,
+                  selectedLibraryId: _selectedLibraryId,
+                  onLibraryChanged: _onLibraryChanged,
+                  onSettings: _showSettingsDialog,
+                ),
+                Expanded(child: _buildBody()),
+              ],
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -344,7 +347,6 @@ class _GenreHeader extends StatelessWidget {
   final String? selectedLibraryId;
   final ValueChanged<String?> onLibraryChanged;
   final VoidCallback onSettings;
-  final VoidCallback onBack;
 
   const _GenreHeader({
     required this.genreName,
@@ -353,7 +355,6 @@ class _GenreHeader extends StatelessWidget {
     required this.selectedLibraryId,
     required this.onLibraryChanged,
     required this.onSettings,
-    required this.onBack,
   });
 
   @override
@@ -368,12 +369,6 @@ class _GenreHeader extends StatelessWidget {
         child: Row(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            IconButton(
-              icon: const Icon(Icons.arrow_back, color: Colors.white70, size: 22),
-              onPressed: onBack,
-              tooltip: 'Back',
-            ),
-            const SizedBox(width: 8),
             Flexible(
               child: Text(
                 genreName,
@@ -412,12 +407,6 @@ class _GenreHeader extends StatelessWidget {
       padding: EdgeInsets.fromLTRB(hPad, topPad, hPad, 8),
       child: Row(
         children: [
-          IconButton(
-            icon: const Icon(Icons.arrow_back, color: Colors.white70, size: 22),
-            onPressed: onBack,
-            tooltip: 'Back',
-          ),
-          const SizedBox(width: 12),
           Text(
             genreName,
             style: const TextStyle(

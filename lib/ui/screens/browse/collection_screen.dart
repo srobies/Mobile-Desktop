@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class CollectionScreen extends StatelessWidget {
   final String collectionId;
 
@@ -8,8 +10,11 @@ class CollectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Collection')),
-      body: const Center(child: Text('Collection items will appear here')),
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: const Center(child: Text('Collection items will appear here')),
+      ),
     );
   }
 }

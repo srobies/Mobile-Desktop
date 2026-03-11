@@ -9,6 +9,7 @@ import 'top_toolbar.dart';
 class NavigationLayout extends StatefulWidget {
   final String? activeRoute;
   final Widget child;
+  final bool showBackButton;
 
   /// Notifier that any screen can update to trigger a live position change.
   static final positionNotifier = ValueNotifier<NavbarPosition?>(
@@ -19,6 +20,7 @@ class NavigationLayout extends StatefulWidget {
     super.key,
     this.activeRoute,
     required this.child,
+    this.showBackButton = false,
   });
 
   @override
@@ -79,7 +81,10 @@ class _NavigationLayoutState extends State<NavigationLayout> with WidgetsBinding
           left: 0,
           right: 0,
           top: 0,
-          child: TopToolbar(activeRoute: widget.activeRoute),
+          child: TopToolbar(
+            activeRoute: widget.activeRoute,
+            showBackButton: widget.showBackButton,
+          ),
         ),
       ],
     );
@@ -93,6 +98,7 @@ class _NavigationLayoutState extends State<NavigationLayout> with WidgetsBinding
           child: LeftSidebar(
             activeRoute: widget.activeRoute,
             contentFocusNode: _contentFocusNode,
+            showBackButton: widget.showBackButton,
           ),
         ),
       ],

@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class JellyseerrBrowseScreen extends StatelessWidget {
   final String? filterId;
   final String? filterName;
@@ -17,9 +19,12 @@ class JellyseerrBrowseScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(filterName ?? 'Browse')),
-      body: const Center(
-        child: Text('Jellyseerr browse results will appear here'),
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: const Center(
+          child: Text('Jellyseerr browse results will appear here'),
+        ),
       ),
     );
   }

@@ -17,6 +17,7 @@ import '../../navigation/destinations.dart';
 import '../../widgets/add_to_playlist_dialog.dart';
 import '../../widgets/logo_view.dart';
 import '../../widgets/media_card.dart';
+import '../../widgets/navigation_layout.dart';
 import '../../widgets/rating_display.dart';
 import '../../widgets/track_action_dialog.dart';
 import '../../widgets/track_selector_dialog.dart';
@@ -87,11 +88,9 @@ class _ItemDetailScreenState extends State<ItemDetailScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       backgroundColor: Colors.black,
-      body: Stack(
-        children: [
-          _buildBody(context),
-          const _BackButton(),
-        ],
+      body: NavigationLayout(
+        showBackButton: true,
+        child: _buildBody(context),
       ),
     );
   }
@@ -459,41 +458,6 @@ class _GradientScrim extends StatelessWidget {
           ),
         ),
         child: SizedBox.expand(),
-      ),
-    );
-  }
-}
-
-class _BackButton extends StatelessWidget {
-  const _BackButton();
-
-  @override
-  Widget build(BuildContext context) {
-    final isMobile = _isCompact(context);
-    final top = MediaQuery.of(context).padding.top;
-
-    return Positioned(
-      top: top + (isMobile ? 8 : 16),
-      left: isMobile ? 8 : 16,
-      child: Material(
-        color: Colors.transparent,
-        child: InkWell(
-          onTap: () => context.pop(),
-          customBorder: const CircleBorder(),
-          child: Container(
-            width: isMobile ? 36 : 40,
-            height: isMobile ? 36 : 40,
-            decoration: BoxDecoration(
-              color: Colors.black.withValues(alpha: 0.4),
-              shape: BoxShape.circle,
-            ),
-            child: Icon(
-              Icons.arrow_back,
-              color: Colors.white,
-              size: isMobile ? 18 : 20,
-            ),
-          ),
-        ),
       ),
     );
   }

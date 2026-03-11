@@ -1,5 +1,7 @@
 import 'package:flutter/material.dart';
 
+import '../../widgets/navigation_layout.dart';
+
 class JellyseerrPersonScreen extends StatelessWidget {
   final String personId;
 
@@ -8,9 +10,12 @@ class JellyseerrPersonScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Person')),
-      body: const Center(
-        child: Text('Jellyseerr person details will appear here'),
+      backgroundColor: Colors.black,
+      body: NavigationLayout(
+        showBackButton: true,
+        child: const Center(
+          child: Text('Jellyseerr person details will appear here'),
+        ),
       ),
     );
   }
