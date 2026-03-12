@@ -2,19 +2,38 @@ import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:playback_core/playback_core.dart';
 
+import '../preference/user_preferences.dart';
+import '../preference/preference_constants.dart';
+import 'device_profile_builder.dart';
+
 class MediaKitPlayerBackend implements PlayerBackend {
   final Player _player;
   final VideoController _videoController;
+  final UserPreferences _prefs;
 
-  MediaKitPlayerBackend._(this._player, this._videoController);
+  MediaKitPlayerBackend._(this._player, this._videoController, this._prefs);
 
-  factory MediaKitPlayerBackend() {
+  factory MediaKitPlayerBackend(UserPreferences prefs) {
     final player = Player();
     final controller = VideoController(player);
-    return MediaKitPlayerBackend._(player, controller);
+    return MediaKitPlayerBackend._(player, controller, prefs);
   }
 
   VideoController get videoController => _videoController;
+
+  @override
+  Map<String, dynamic> getDeviceProfile() {
+    final maxBitrate = int.tryParse(_prefs.get(UserPreferences.maxBitrate));
+    final ac3Enabled = _prefs.get(UserPreferences.ac3Enabled);
+    final stereoDownmix =
+        _prefs.get(UserPreferences.audioBehavior) == AudioBehavior.downmixToStereo;
+
+    return DeviceProfileBuilder.build(
+      maxBitrateMbps: maxBitrate,
+      ac3Enabled: ac3Enabled,
+      stereoDownmix: stereoDownmix,
+    );
+  }
 
   @override
   Future<void> play(dynamic mediaItem) async {

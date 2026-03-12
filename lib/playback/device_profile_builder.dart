@@ -3,16 +3,21 @@ import '../util/platform_detection.dart';
 class DeviceProfileBuilder {
   const DeviceProfileBuilder._();
 
-  static Map<String, dynamic> build() {
+  static Map<String, dynamic> build({
+    int? maxBitrateMbps,
+    bool ac3Enabled = true,
+    bool stereoDownmix = false,
+  }) {
+    final bitrate = (maxBitrateMbps ?? 200) * 1000000;
     return {
       'Name': _profileName(),
-      'MaxStaticBitrate': 200000000,
-      'MaxStreamingBitrate': 200000000,
+      'MaxStaticBitrate': bitrate,
+      'MaxStreamingBitrate': bitrate,
       'MusicStreamingTranscodingBitrate': 384000,
-      'DirectPlayProfiles': _directPlayProfiles(),
-      'TranscodingProfiles': _transcodingProfiles(),
+      'DirectPlayProfiles': _directPlayProfiles(ac3Enabled: ac3Enabled),
+      'TranscodingProfiles': _transcodingProfiles(ac3Enabled: ac3Enabled),
       'ContainerProfiles': <Map<String, dynamic>>[],
-      'CodecProfiles': _codecProfiles(),
+      'CodecProfiles': _codecProfiles(stereoDownmix: stereoDownmix),
       'SubtitleProfiles': _subtitleProfiles(),
     };
   }
@@ -27,16 +32,34 @@ class DeviceProfileBuilder {
   }
 
   static const _videoCodecs = 'h264,hevc,vp8,vp9,av1,mpeg2video,mpeg4,vc1';
-  static const _audioCodecs = 'aac,ac3,eac3,dts,mp3,flac,vorbis,opus,truehd,pcm_s16le,pcm_s24le';
-  static const _hlsAudioCodecs = 'aac,ac3,eac3,mp3';
 
-  static List<Map<String, dynamic>> _directPlayProfiles() {
+  static String _audioCodecs({required bool ac3Enabled}) {
+    return [
+      'aac',
+      if (ac3Enabled) ...['ac3', 'eac3'],
+      'mp3', 'flac', 'vorbis', 'opus', 'dts', 'truehd',
+      'pcm_s16le', 'pcm_s24le',
+    ].join(',');
+  }
+
+  static String _hlsAudioCodecs({required bool ac3Enabled}) {
+    return [
+      'aac',
+      if (ac3Enabled) ...['ac3', 'eac3'],
+      'mp3',
+    ].join(',');
+  }
+
+  static List<Map<String, dynamic>> _directPlayProfiles({
+    required bool ac3Enabled,
+  }) {
+    final audio = _audioCodecs(ac3Enabled: ac3Enabled);
     return [
       {
         'Container': 'mp4,m4v,mkv,avi,mov',
         'Type': 'Video',
         'VideoCodec': _videoCodecs,
-        'AudioCodec': _audioCodecs,
+        'AudioCodec': audio,
       },
       {
         'Container': 'webm',
@@ -48,13 +71,15 @@ class DeviceProfileBuilder {
         'Container': 'ts,m2ts,mpegts',
         'Type': 'Video',
         'VideoCodec': 'h264,hevc,mpeg2video',
-        'AudioCodec': 'aac,ac3,eac3,dts,mp3',
+        'AudioCodec': ac3Enabled
+            ? 'aac,ac3,eac3,dts,mp3'
+            : 'aac,dts,mp3',
       },
       {
         'Container': 'wmv,asf',
         'Type': 'Video',
         'VideoCodec': 'vc1,mpeg4',
-        'AudioCodec': 'aac,ac3,mp3',
+        'AudioCodec': ac3Enabled ? 'aac,ac3,mp3' : 'aac,mp3',
       },
       {
         'Container': 'mp3',
@@ -80,13 +105,16 @@ class DeviceProfileBuilder {
     ];
   }
 
-  static List<Map<String, dynamic>> _transcodingProfiles() {
+  static List<Map<String, dynamic>> _transcodingProfiles({
+    required bool ac3Enabled,
+  }) {
+    final hlsAudio = _hlsAudioCodecs(ac3Enabled: ac3Enabled);
     return [
       {
         'Container': 'ts',
         'Type': 'Video',
         'VideoCodec': 'h264',
-        'AudioCodec': _hlsAudioCodecs,
+        'AudioCodec': hlsAudio,
         'Protocol': 'hls',
         'Context': 'Streaming',
         'CopyTimestamps': false,
@@ -97,7 +125,7 @@ class DeviceProfileBuilder {
         'Container': 'mp4',
         'Type': 'Video',
         'VideoCodec': 'h264',
-        'AudioCodec': _hlsAudioCodecs,
+        'AudioCodec': hlsAudio,
         'Protocol': 'hls',
         'Context': 'Streaming',
         'CopyTimestamps': false,
@@ -114,7 +142,9 @@ class DeviceProfileBuilder {
     ];
   }
 
-  static List<Map<String, dynamic>> _codecProfiles() {
+  static List<Map<String, dynamic>> _codecProfiles({
+    required bool stereoDownmix,
+  }) {
     return [
       {
         'Type': 'Video',
@@ -164,6 +194,18 @@ class DeviceProfileBuilder {
           },
         ],
       },
+      if (stereoDownmix)
+        {
+          'Type': 'VideoAudio',
+          'Conditions': [
+            {
+              'Condition': 'LessThanEqual',
+              'Property': 'AudioChannels',
+              'Value': '2',
+              'IsRequired': false,
+            },
+          ],
+        },
     ];
   }
 

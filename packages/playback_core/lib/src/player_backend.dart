@@ -16,6 +16,8 @@ abstract class PlayerBackend {
   Stream<bool> get playingStream;
   Stream<bool> get bufferingStream;
 
+  Map<String, dynamic> getDeviceProfile();
+
   Future<void> setPlaybackSpeed(double speed);
   Future<void> setAudioTrack(int index);
   Future<void> setSubtitleTrack(int index);

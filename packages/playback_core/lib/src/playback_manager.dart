@@ -17,9 +17,6 @@ class PlaybackManager {
   Timer? _progressTimer;
   StreamResolutionResult? _currentResolution;
 
-  Map<String, dynamic>? deviceProfile;
-  int? maxStreamingBitrate;
-
   PlayerBackend? get backend => _backend;
   StreamResolutionResult? get currentResolution => _currentResolution;
 
@@ -77,10 +74,13 @@ class PlaybackManager {
     final startTicks =
         startPosition > Duration.zero ? startPosition.inMicroseconds * 10 : null;
 
+    final profile = _backend!.getDeviceProfile();
+    final maxBitrate = profile['MaxStreamingBitrate'] as int?;
+
     final resolution = await _resolver!.resolve(
       item,
-      deviceProfile: deviceProfile,
-      maxStreamingBitrate: maxStreamingBitrate,
+      deviceProfile: profile,
+      maxStreamingBitrate: maxBitrate,
       startTimeTicks: startTicks,
     );
     _currentResolution = resolution;
