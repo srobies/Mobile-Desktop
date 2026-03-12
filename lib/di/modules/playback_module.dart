@@ -4,10 +4,18 @@ import 'package:playback_jellyfin/playback_jellyfin.dart';
 import 'package:playback_emby/playback_emby.dart';
 import 'package:server_core/server_core.dart';
 
+import '../../playback/media_kit_player_backend.dart';
+
 final _getIt = GetIt.instance;
 
 void registerPlaybackModule() {
-  _getIt.registerLazySingleton(() => PlaybackManager());
+  final backend = MediaKitPlayerBackend();
+  _getIt.registerSingleton<MediaKitPlayerBackend>(backend);
+  _getIt.registerSingleton<PlayerBackend>(backend);
+
+  final manager = PlaybackManager();
+  manager.setBackend(backend);
+  _getIt.registerSingleton<PlaybackManager>(manager);
 }
 
 void setActiveStreamResolver(MediaServerClient client) {
