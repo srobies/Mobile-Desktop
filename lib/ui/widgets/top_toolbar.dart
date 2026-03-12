@@ -153,7 +153,8 @@ class _TopToolbarState extends State<TopToolbar> {
           if (widget.showBackButton) ...[
             const SizedBox(width: 8),
             GestureDetector(
-              onTap: () => context.pop(),
+              behavior: HitTestBehavior.opaque,
+              onTap: () => context.popOrHome(),
               child: Container(
                 width: 40,
                 height: 40,

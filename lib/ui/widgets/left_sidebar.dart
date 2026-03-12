@@ -231,7 +231,8 @@ class _LeftSidebarState extends State<LeftSidebar> {
                     if (widget.showBackButton) ...[
                       const SizedBox(width: 6),
                       GestureDetector(
-                        onTap: () => context.pop(),
+                        behavior: HitTestBehavior.opaque,
+                        onTap: () => context.popOrHome(),
                         child: Container(
                           width: 40,
                           height: 40,

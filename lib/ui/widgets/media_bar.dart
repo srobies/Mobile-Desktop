@@ -320,7 +320,7 @@ class _MediaBarState extends State<MediaBar> {
   void _navigateToItem(BuildContext context, List<MediaBarSlideItem> items) {
     final item = items.elementAtOrNull(_currentIndex);
     if (item != null) {
-      context.go(Destinations.item(item.itemId));
+      context.push(Destinations.item(item.itemId));
     }
   }
 
