@@ -322,7 +322,6 @@ class _MarqueeTextState extends State<_MarqueeText>
     with SingleTickerProviderStateMixin {
   late final ScrollController _controller;
   late final AnimationController _anim;
-  bool _needsScroll = false;
 
   @override
   void initState() {
@@ -336,7 +335,6 @@ class _MarqueeTextState extends State<_MarqueeText>
     if (!mounted || !_controller.hasClients) return;
     final max = _controller.position.maxScrollExtent;
     if (max > 0) {
-      _needsScroll = true;
       final duration = Duration(milliseconds: (max * 30).toInt().clamp(1500, 8000));
       _anim.duration = duration;
       _anim.addListener(_onTick);

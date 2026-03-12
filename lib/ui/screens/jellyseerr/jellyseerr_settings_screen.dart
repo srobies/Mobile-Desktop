@@ -6,9 +6,6 @@ import '../../../auth/repositories/session_repository.dart';
 import '../../widgets/navigation_layout.dart';
 
 /// Jellyseerr integration settings.
-///
-/// Per-user preferences for Jellyseerr toolbar visibility
-/// ported from AndroidTV-FireTV PR #86 (benklop).
 class JellyseerrSettingsScreen extends StatefulWidget {
   const JellyseerrSettingsScreen({super.key});
 

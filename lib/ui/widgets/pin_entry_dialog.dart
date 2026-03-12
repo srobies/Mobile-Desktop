@@ -1,5 +1,4 @@
 import 'package:flutter/material.dart';
-import 'package:flutter/services.dart';
 
 enum PinEntryMode { set, verify }
 
@@ -8,8 +7,6 @@ enum PinEntryMode { set, verify }
 /// Supports two modes:
 /// - [PinEntryMode.set]: Setting a new PIN (requires confirmation).
 /// - [PinEntryMode.verify]: Verifying an existing PIN.
-///
-/// Ported from AndroidTV-FireTV PR #86 (benklop).
 class PinEntryDialog extends StatefulWidget {
   final PinEntryMode mode;
   final bool Function(String pin)? onVerify;

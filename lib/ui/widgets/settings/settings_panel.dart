@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 
-import '../../util/platform_detection.dart';
+import '../../../util/platform_detection.dart';
 
 class SettingsPanel extends StatelessWidget {
   final Widget child;

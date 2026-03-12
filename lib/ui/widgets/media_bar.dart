@@ -471,7 +471,6 @@ class _SlideInfo extends StatelessWidget {
   final bool showLabels;
 
   const _SlideInfo({
-    super.key,
     required this.item,
     required this.ratings,
     required this.enableAdditionalRatings,

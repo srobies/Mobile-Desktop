@@ -7,9 +7,6 @@ import '../../../util/pin_code_util.dart';
 import '../../widgets/pin_entry_dialog.dart';
 
 /// Settings screen for managing PIN code protection.
-///
-/// Allows users to enable/disable, set, change, or remove their PIN.
-/// Ported from AndroidTV-FireTV PR #86 (benklop).
 class PinCodeSettingsScreen extends StatefulWidget {
   const PinCodeSettingsScreen({super.key});
 

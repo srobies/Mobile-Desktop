@@ -1,5 +1,3 @@
-import 'dart:collection';
-
 import 'package:flutter/material.dart';
 
 import '../../data/services/rating_icon_provider.dart';
@@ -39,7 +37,7 @@ class RatingsRow extends StatelessWidget {
         .where((s) => s.isNotEmpty)
         .toSet();
 
-    final allRatings = LinkedHashMap<String, double>();
+    final allRatings = <String, double>{};
 
     if (communityRating != null) {
       allRatings['stars'] = communityRating!;

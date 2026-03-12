@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
-import 'package:server_core/server_core.dart';
 
 import '../../data/models/aggregated_item.dart';
 import '../../data/repositories/mdblist_repository.dart';

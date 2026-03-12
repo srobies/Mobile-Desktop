@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:jellyfin_preference/jellyfin_preference.dart';
 
-import '../../../preference/user_preferences.dart';
 import '../../widgets/settings/preference_binding.dart';
 
 class ParentalSettingsScreen extends StatefulWidget {

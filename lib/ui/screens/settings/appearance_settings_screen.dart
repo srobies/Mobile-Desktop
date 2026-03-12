@@ -136,7 +136,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             title: Text(e.key),
             onTap: () {
               final match = AppTheme.values.where(
-                (t) => t.colorValue == e.value.value,
+                (t) => t.colorValue == e.value.toARGB32(),
               );
               if (match.isNotEmpty) {
                 _prefs.set(UserPreferences.focusColor, match.first);
