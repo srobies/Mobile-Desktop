@@ -187,3 +187,36 @@ enum SeriesStatusFilter {
   continuing,
   ended,
 }
+
+enum FavoriteTypeFilter {
+  all,
+  movie,
+  series,
+  episode,
+  person,
+  musicAlbum,
+  musicArtist,
+  audio;
+
+  String get displayName => switch (this) {
+    all => 'All',
+    movie => 'Movies',
+    series => 'Series',
+    episode => 'Episodes',
+    person => 'People',
+    musicAlbum => 'Albums',
+    musicArtist => 'Artists',
+    audio => 'Songs',
+  };
+
+  List<String>? get itemTypes => switch (this) {
+    all => null,
+    movie => ['Movie'],
+    series => ['Series'],
+    episode => ['Episode'],
+    person => ['Person'],
+    musicAlbum => ['MusicAlbum'],
+    musicArtist => ['MusicArtist'],
+    audio => ['Audio'],
+  };
+}

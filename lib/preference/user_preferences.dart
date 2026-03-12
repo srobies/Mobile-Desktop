@@ -598,4 +598,11 @@ class UserPreferences {
         defaultValue: ImageType.poster,
         values: ImageType.values,
       );
+
+  static EnumPreference<FavoriteTypeFilter> favoriteTypeFilter =
+      EnumPreference(
+        key: 'favorites_type_filter',
+        defaultValue: FavoriteTypeFilter.all,
+        values: FavoriteTypeFilter.values,
+      );
 }
