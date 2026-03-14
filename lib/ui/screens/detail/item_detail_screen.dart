@@ -601,9 +601,11 @@ class _HeaderSection extends StatelessWidget {
         ? _EpisodeThumbnail(item: item, imageApi: imageApi)
         : _PosterImage(item: item, imageApi: imageApi);
 
+    final safeTop = MediaQuery.of(context).padding.top;
+
     if (isMobile) {
       return Padding(
-        padding: const EdgeInsets.fromLTRB(16, 60, 16, 12),
+        padding: EdgeInsets.fromLTRB(16, safeTop + 60, 16, 12),
         child: Column(
           children: [
             posterWidget,
@@ -615,7 +617,7 @@ class _HeaderSection extends StatelessWidget {
     }
 
     return Padding(
-      padding: const EdgeInsets.fromLTRB(48, 80, 48, 16),
+      padding: EdgeInsets.fromLTRB(48, safeTop + 80, 48, 16),
       child: Row(
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
@@ -2037,6 +2039,7 @@ class _PersonHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = _isCompact(context);
+    final safeTop = MediaQuery.of(context).padding.top;
     String? imageUrl;
     if (item.primaryImageTag != null) {
       imageUrl = imageApi.getPrimaryImageUrl(item.id, maxHeight: 400, tag: item.primaryImageTag);
@@ -2082,7 +2085,7 @@ class _PersonHeader extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.only(top: isMobile ? 60 : 80),
+      padding: EdgeInsets.only(top: safeTop + (isMobile ? 60 : 80)),
       child: isMobile
           ? Column(
               children: [
@@ -2251,6 +2254,7 @@ class _ArtistHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = _isCompact(context);
+    final safeTop = MediaQuery.of(context).padding.top;
     String? imageUrl;
     if (item.primaryImageTag != null) {
       imageUrl = imageApi.getPrimaryImageUrl(item.id, maxHeight: 400, tag: item.primaryImageTag);
@@ -2293,7 +2297,7 @@ class _ArtistHeader extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.only(top: isMobile ? 60 : 80),
+      padding: EdgeInsets.only(top: safeTop + (isMobile ? 60 : 80)),
       child: isMobile
           ? Column(
               children: [
@@ -2324,6 +2328,7 @@ class _AlbumHeader extends StatelessWidget {
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
     final isMobile = _isCompact(context);
+    final safeTop = MediaQuery.of(context).padding.top;
     final albumSize = isMobile ? 150.0 : 200.0;
 
     final albumArt = ClipRRect(
@@ -2384,7 +2389,7 @@ class _AlbumHeader extends StatelessWidget {
     );
 
     return Padding(
-      padding: EdgeInsets.only(top: isMobile ? 60 : 80),
+      padding: EdgeInsets.only(top: safeTop + (isMobile ? 60 : 80)),
       child: isMobile
           ? Column(
               children: [
