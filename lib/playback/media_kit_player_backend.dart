@@ -1,3 +1,4 @@
+
 import 'package:media_kit/media_kit.dart';
 import 'package:media_kit_video/media_kit_video.dart';
 import 'package:playback_core/playback_core.dart';
@@ -124,14 +125,12 @@ class MediaKitPlayerBackend implements PlayerBackend {
       for (final t in tracks) {
         if (t.id == id) { match = t; break; }
       }
-      print('MOONFIN: setAudioTrack aid=$id match=${match != null} available=[${tracks.map((t) => "${t.id}:${t.title}").join(", ")}]');
       if (match != null) {
         await _player.setAudioTrack(match);
       } else {
         await _player.setAudioTrack(AudioTrack(id, null, null));
       }
     } catch (e) {
-      print('MOONFIN: setAudioTrack ERROR aid=$id: $e');
       try {
         final native = _player.platform as NativePlayer;
         await native.setProperty('aid', id);
@@ -151,7 +150,6 @@ class MediaKitPlayerBackend implements PlayerBackend {
       for (final t in tracks) {
         if (t.id == id) { match = t; break; }
       }
-      print('MOONFIN: setSubtitleTrack sid=$id match=${match != null} bitmap=$isBitmapSubtitle libass=$_useLibass available=[${tracks.map((t) => "${t.id}:${t.title}:${t.language}").join(", ")}]');
 
       if (match != null) {
         await _player.setSubtitleTrack(match);
@@ -163,13 +161,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
       if (!_useLibass) {
         await native.setProperty('sub-visibility', 'no');
       }
-
-      final currentSid = await native.getProperty('sid');
-      final subVis = await native.getProperty('sub-visibility');
-      print('MOONFIN: setSubtitleTrack confirmed=$currentSid vis=$subVis');
-    } catch (e) {
-      print('MOONFIN: setSubtitleTrack ERROR sid=$id: $e');
-    }
+    } catch (_) {}
   }
 
   @override
@@ -180,16 +172,13 @@ class MediaKitPlayerBackend implements PlayerBackend {
   @override
   Future<void> waitForTracksReady() async {
     if (_player.state.tracks.audio.isNotEmpty) {
-      print('MOONFIN: waitForTracksReady: already available (${_player.state.tracks.audio.length} audio, ${_player.state.tracks.subtitle.length} sub)');
       return;
     }
     try {
       await _player.stream.tracks
           .firstWhere((t) => t.audio.isNotEmpty)
           .timeout(const Duration(seconds: 5));
-      print('MOONFIN: waitForTracksReady: tracks became available');
     } catch (_) {
-      print('MOONFIN: waitForTracksReady: timed out');
     }
   }
 
@@ -216,7 +205,6 @@ class MediaKitPlayerBackend implements PlayerBackend {
     String? title,
     String? language,
   }) async {
-    print('MOONFIN: sub-add url=$url title=$title');
     final native = _player.platform as NativePlayer;
     await native.command([
       'sub-add',
@@ -261,9 +249,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
         final marginY = (verticalOffset * 720).round();
         await native.setProperty('sub-margin-y', marginY.toString());
       }
-    } catch (e) {
-      print('MOONFIN: configureSubtitleStyle ERROR: $e');
-    }
+    } catch (_) {}
   }
 
   void _enableNativeSubtitleRendering() {
@@ -274,9 +260,7 @@ class MediaKitPlayerBackend implements PlayerBackend {
         await native.setProperty('sub-ass', 'yes');
         await native.setProperty('sub-ass-override', 'yes');
         await native.setProperty('sub-forced-events-only', 'no');
-      } catch (e) {
-        print('MOONFIN: _enableNativeSubtitleRendering ERROR: $e');
-      }
+      } catch (_) {}
     });
   }
 

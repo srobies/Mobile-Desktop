@@ -1,3 +1,4 @@
+
 import 'package:playback_core/playback_core.dart';
 import 'package:server_core/server_core.dart';
 
@@ -45,11 +46,7 @@ class EmbyMediaStreamResolver implements MediaStreamResolver {
     }
 
     final source = _selectBestSource(info.mediaSources);
-    print('MOONFIN: resolve source="${source.name}" container=${source.container} '
-        'directPlay=${source.supportsDirectPlay} directStream=${source.supportsDirectStream} '
-        'transcode=${source.supportsTranscoding}');
     var (url, playMethod) = _resolveStreamUrl(itemId, source);
-    print('MOONFIN: resolved playMethod=$playMethod');
 
     if (playMethod == StreamPlayMethod.transcode) {
       url = MediaStreamResolver.applyStreamIndices(url, audioStreamIndex, subtitleStreamIndex);

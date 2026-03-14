@@ -789,7 +789,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> {
     final options = <int?>[null, 40, 20, 12, 8, 4, 2];
     final current = _manager.maxBitrateOverrideMbps;
 
-    String label(int? mbps) => mbps == null ? 'Auto' : '${mbps} Mbps';
+    String label(int? mbps) => mbps == null ? 'Auto' : '$mbps Mbps';
 
     return SizedBox(
       width: 48,

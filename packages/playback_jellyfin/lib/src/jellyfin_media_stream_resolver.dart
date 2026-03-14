@@ -1,3 +1,4 @@
+
 import 'package:playback_core/playback_core.dart';
 import 'package:server_core/server_core.dart';
 
@@ -36,16 +37,6 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
       userId: _client.userId,
     );
 
-    final rawSources = rawInfo['MediaSources'] as List?;
-    if (rawSources != null && rawSources.isNotEmpty) {
-      final first = rawSources[0] as Map<String, dynamic>;
-      print('MOONFIN: raw source keys: ${first.keys.where((k) => !['MediaStreams', 'MediaAttachments', 'RequiredHttpHeaders'].contains(k)).join(', ')}');
-      final rawReasons = first['TranscodingReasons'] ?? first['TranscodeReasons'];
-      if (rawReasons != null) {
-        print('MOONFIN: raw TranscodingReasons=$rawReasons');
-      }
-    }
-
     final info = PlaybackInfoResult.fromJson(rawInfo);
 
     if (info.errorCode != null) {
@@ -56,24 +47,6 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
     }
 
     final source = _selectBestSource(info.mediaSources);
-    final videoStream = source.mediaStreams.cast<Map<String, dynamic>?>().firstWhere(
-        (s) => s?['Type'] == 'Video', orElse: () => null);
-    final audioStream = source.mediaStreams.cast<Map<String, dynamic>?>().firstWhere(
-        (s) => s?['Type'] == 'Audio', orElse: () => null);
-    final subtitleStreams = source.mediaStreams
-        .where((s) => s['Type'] == 'Subtitle')
-        .map((s) => '${s['Index']}:${s['Codec']}(ext=${s['IsExternal']},extStream=${s['SupportsExternalStream']},url=${s['DeliveryUrl'] != null})')
-        .join(', ');
-    final reasons = source.transcodingReasons.isNotEmpty
-        ? ' reasons=[${source.transcodingReasons.join(',')}]'
-        : '';
-    print('MOONFIN: resolve "${source.name}" dp=${source.supportsDirectPlay} ds=${source.supportsDirectStream} tc=${source.supportsTranscoding}$reasons '
-        'video=${videoStream?['Codec']}@${videoStream?['Profile']}:L${videoStream?['Level']} '
-        'audio=${audioStream?['Codec']}:${audioStream?['Channels']}ch bitrate=${source.bitrate} maxBitrate=$maxStreamingBitrate');
-    print('MOONFIN: subtitles=[$subtitleStreams]');
-    if (source.transcodingUrl != null) {
-      print('MOONFIN: transcodingUrl=${source.transcodingUrl}');
-    }
     var (url, playMethod) = _resolveStreamUrl(itemId, source);
 
     if (playMethod == StreamPlayMethod.transcode) {
@@ -96,7 +69,6 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
         }
       }
     }
-    print('MOONFIN: playMethod=$playMethod url=$url');
 
     // Append auth token for mpv (which doesn't use our Dio interceptors).
     url = _appendAuth(url);
@@ -111,7 +83,6 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
       isForced: s.isForced,
       streamIndex: s.streamIndex,
     )).toList();
-    print('MOONFIN: ${authedSubs.length} external sub(s): ${authedSubs.map((s) => '${s.streamIndex}:${s.codec}:${s.deliveryUrl}').join(' | ')}');
 
     return StreamResolutionResult(
       streamUrl: url,
@@ -139,7 +110,7 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
     if (token == null || token.isEmpty) return url;
     if (url.toLowerCase().contains('api_key=') || url.toLowerCase().contains('apikey=')) return url;
     final separator = url.contains('?') ? '&' : '?';
-    return '${url}${separator}api_key=${Uri.encodeComponent(token)}';
+    return '$url${separator}api_key=${Uri.encodeComponent(token)}';
   }
 
   (String, StreamPlayMethod) _resolveStreamUrl(
