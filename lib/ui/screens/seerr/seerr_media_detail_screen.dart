@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -58,6 +56,28 @@ class _SeerrMediaDetailScreenState
     _loadDetails();
   }
 
+  void _showFeedback(SeerrMediaDetailState s) {
+    if (s.requestSuccess != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(s.requestSuccess!),
+          backgroundColor: Colors.green[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _vm?.clearFeedback();
+    } else if (s.requestError != null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(s.requestError!),
+          backgroundColor: Colors.red[700],
+          behavior: SnackBarBehavior.floating,
+        ),
+      );
+      _vm?.clearFeedback();
+    }
+  }
+
   void _loadDetails() {
     final vm = _vm;
     if (vm == null) return;
@@ -81,7 +101,10 @@ class _SeerrMediaDetailScreenState
   }
 
   void _onChanged() {
-    if (mounted) setState(() {});
+    if (!mounted) return;
+    final s = _vm?.state;
+    if (s != null) _showFeedback(s);
+    setState(() {});
   }
 
   @override
@@ -229,7 +252,7 @@ class _SeerrMediaDetailScreenState
 
   Widget _buildStatusBadge(SeerrMediaDetailState s) {
     final Color color;
-    if (s.isAvailable) {
+    if (s.isFullyAvailable) {
       color = Colors.green;
     } else if (s.isPartiallyAvailable || s.isProcessing) {
       color = Colors.orange;
@@ -395,11 +418,19 @@ class _SeerrMediaDetailScreenState
   }
 
   Widget _buildRequestSection(SeerrMediaDetailState s) {
+    final vm = _vm!;
+    final canShowRequest = vm.canRequest &&
+        !s.isFullyAvailable &&
+        (!s.hasExistingRequest || s.isPartiallyAvailable);
+    final requestLabel = s.isPartiallyAvailable ? 'Request More' : 'Request';
+
     return Padding(
       padding: const EdgeInsets.fromLTRB(32, 16, 32, 0),
-      child: Row(
+      child: Wrap(
+        spacing: 12,
+        runSpacing: 8,
         children: [
-          if (_vm!.canRequest && !s.isAvailable && !s.hasExistingRequest)
+          if (canShowRequest)
             ElevatedButton.icon(
               onPressed: s.isRequesting ? null : () => _showRequestSheet(),
               icon: s.isRequesting
@@ -409,20 +440,34 @@ class _SeerrMediaDetailScreenState
                       child: CircularProgressIndicator(strokeWidth: 2),
                     )
                   : const Icon(Icons.add),
-              label: const Text('Request'),
+              label: Text(requestLabel),
               style: ElevatedButton.styleFrom(
                 backgroundColor: const Color(0xFF6366F1),
                 foregroundColor: Colors.white,
               ),
             ),
-          if (s.isAvailable)
+          if (s.isFullyAvailable)
             ElevatedButton.icon(
-              onPressed: () {},
+              onPressed: null,
               icon: const Icon(Icons.check_circle_outline),
               label: const Text('Available'),
               style: ElevatedButton.styleFrom(
                 backgroundColor: Colors.green[700],
                 foregroundColor: Colors.white,
+                disabledBackgroundColor: Colors.green[700],
+                disabledForegroundColor: Colors.white,
+              ),
+            ),
+          if (s.pendingRequests.isNotEmpty)
+            OutlinedButton.icon(
+              onPressed: s.isRequesting
+                  ? null
+                  : () => _showCancelDialog(s),
+              icon: const Icon(Icons.close, size: 18),
+              label: const Text('Cancel Request'),
+              style: OutlinedButton.styleFrom(
+                foregroundColor: Colors.red[300],
+                side: BorderSide(color: Colors.red[300]!),
               ),
             ),
         ],
@@ -497,8 +542,51 @@ class _SeerrMediaDetailScreenState
         vm: vm,
         isTv: s.isTv,
         numberOfSeasons: s.numberOfSeasons ?? 0,
+        requestedSeasons: s.requestedSeasons,
       ),
     );
+  }
+
+  void _showCancelDialog(SeerrMediaDetailState s) {
+    final pending = s.pendingRequests;
+    if (pending.isEmpty) return;
+
+    final title = s.displayTitle;
+    final count = pending.length;
+    final message = count == 1
+        ? 'Cancel request for "$title"?'
+        : 'Cancel $count pending requests for "$title"?';
+
+    showDialog(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: const Color(0xFF1A1A2E),
+        title: const Text('Cancel Request',
+            style: TextStyle(color: Colors.white)),
+        content: Text(message,
+            style: const TextStyle(color: Colors.white70)),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child: const Text('Keep'),
+          ),
+          TextButton(
+            onPressed: () {
+              Navigator.pop(ctx);
+              _cancelRequests(pending);
+            },
+            style: TextButton.styleFrom(foregroundColor: Colors.red[300]),
+            child: const Text('Cancel Request'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _cancelRequests(List<SeerrRequest> requests) async {
+    final vm = _vm;
+    if (vm == null) return;
+    await vm.cancelRequests(requests.map((r) => r.id).toList());
   }
 
   static String? _extractYear(SeerrMediaDetailState s) {
@@ -643,11 +731,13 @@ class _RequestBottomSheet extends StatefulWidget {
   final SeerrMediaDetailViewModel vm;
   final bool isTv;
   final int numberOfSeasons;
+  final Set<int> requestedSeasons;
 
   const _RequestBottomSheet({
     required this.vm,
     required this.isTv,
     required this.numberOfSeasons,
+    this.requestedSeasons = const {},
   });
 
   @override
@@ -698,8 +788,7 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
           _applySavedPreferences();
         });
       }
-    } catch (e) {
-      debugPrint('[RequestSheet] Failed to load servers: $e');
+    } catch (_) {
     } finally {
       if (mounted) setState(() => _loadingServers = false);
     }
@@ -720,6 +809,21 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
     }
     if (savedFolder != null && savedFolder.isNotEmpty) {
       _selectedRootFolderId = int.tryParse(savedFolder);
+    }
+
+    _applyServerDefaults();
+  }
+
+  void _applyServerDefaults() {
+    final server = _activeServer;
+    if (server == null) return;
+    _selectedProfileId ??= server.server.activeProfileId;
+    final dir = server.server.activeDirectory;
+    if (_selectedRootFolderId == null && dir.isNotEmpty) {
+      final match = server.rootFolders
+          .where((f) => f.path == dir)
+          .firstOrNull;
+      if (match != null) _selectedRootFolderId = match.id;
     }
   }
 
@@ -745,12 +849,13 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
+    final bottomPad = MediaQuery.of(context).padding.bottom;
     return Padding(
       padding: EdgeInsets.only(
         bottom: MediaQuery.of(context).viewInsets.bottom,
       ),
       child: SingleChildScrollView(
-        padding: const EdgeInsets.fromLTRB(24, 16, 24, 24),
+        padding: EdgeInsets.fromLTRB(24, 16, 24, 24 + bottomPad),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           crossAxisAlignment: CrossAxisAlignment.stretch,
@@ -779,6 +884,8 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
                 value: _is4k,
                 onChanged: (v) => setState(() {
                   _is4k = v;
+                  _selectedProfileId = null;
+                  _selectedRootFolderId = null;
                   _applySavedPreferences();
                 }),
                 contentPadding: EdgeInsets.zero,
@@ -799,7 +906,8 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(vertical: 14),
               ),
-              child: const Text('Submit Request'),
+              child: const Text('Submit Request',
+                  style: TextStyle(fontSize: 15)),
             ),
           ],
         ),
@@ -809,6 +917,7 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
 
   Widget _buildSeasonSelector() {
     final seasonCount = widget.numberOfSeasons;
+    final requested = widget.requestedSeasons;
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
@@ -829,22 +938,31 @@ class _RequestBottomSheetState extends State<_RequestBottomSheet> {
             runSpacing: 4,
             children: List.generate(seasonCount, (i) {
               final num = i + 1;
+              final alreadyRequested = requested.contains(num);
               final selected = _selectedSeasons.contains(num);
               return FilterChip(
-                label: Text('S$num'),
+                label: Text('S$num',
+                    style: TextStyle(
+                      fontSize: 13,
+                      color: alreadyRequested
+                          ? Colors.white38
+                          : selected
+                              ? Colors.white
+                              : Colors.white70,
+                    )),
                 selected: selected,
-                onSelected: (v) => setState(() {
-                  if (v) {
-                    _selectedSeasons.add(num);
-                  } else {
-                    _selectedSeasons.remove(num);
-                  }
-                }),
+                onSelected: alreadyRequested
+                    ? null
+                    : (v) => setState(() {
+                          if (v) {
+                            _selectedSeasons.add(num);
+                          } else {
+                            _selectedSeasons.remove(num);
+                          }
+                        }),
                 selectedColor: const Color(0xFF6366F1),
                 checkmarkColor: Colors.white,
-                labelStyle: TextStyle(
-                  color: selected ? Colors.white : Colors.white70,
-                ),
+                disabledColor: Colors.white.withValues(alpha: 0.05),
                 backgroundColor: Colors.white12,
                 side: BorderSide.none,
               );

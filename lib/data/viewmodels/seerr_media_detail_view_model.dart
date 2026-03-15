@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:flutter/foundation.dart';
 
 import '../../preference/seerr_preferences.dart';
@@ -65,9 +63,19 @@ class SeerrMediaDetailState {
       movie?.keywords ?? tv?.keywords ?? [];
 
   int get mediaStatus => mediaInfo?.status ?? 0;
-  bool get isAvailable => mediaStatus == 5 || mediaStatus == 4;
-  bool get isPartiallyAvailable => mediaStatus == 3;
-  bool get isProcessing => mediaStatus == 2;
+  bool get isFullyAvailable => mediaStatus == 5;
+  bool get isPartiallyAvailable => mediaStatus == 4;
+  bool get isProcessing => mediaStatus == 3;
+  bool get isPending => mediaStatus == 2;
+  bool get isBlacklisted => mediaStatus == 6;
+
+  List<SeerrRequest> get pendingRequests {
+    final requests = mediaInfo?.requests;
+    if (requests == null) return [];
+    return requests
+        .where((r) => r.status == SeerrRequest.statusPending)
+        .toList();
+  }
 
   bool get hasExistingRequest {
     final requests = mediaInfo?.requests;
@@ -77,10 +85,27 @@ class SeerrMediaDetailState {
         r.status == SeerrRequest.statusApproved);
   }
 
+  Set<int> get requestedSeasons {
+    final requests = mediaInfo?.requests;
+    if (requests == null) return {};
+    final seasons = <int>{};
+    for (final r in requests) {
+      if (r.status == SeerrRequest.statusDeclined) continue;
+      if (r.seasons != null) {
+        for (final s in r.seasons!) {
+          seasons.add(s.seasonNumber);
+        }
+      }
+    }
+    return seasons;
+  }
+
   String get requestStatusText {
-    if (isAvailable) return 'Available';
+    if (isFullyAvailable) return 'Available';
     if (isPartiallyAvailable) return 'Partially Available';
     if (isProcessing) return 'Processing';
+    if (isPending) return 'Pending';
+    if (isBlacklisted) return 'Blacklisted';
     if (hasExistingRequest) return 'Requested';
     return 'Not Requested';
   }
@@ -120,6 +145,10 @@ class SeerrMediaDetailViewModel extends ChangeNotifier {
 
   SeerrMediaDetailViewModel(this._repo, this._prefs);
 
+  void clearFeedback() {
+    _state = _state.copyWith(requestSuccess: null, requestError: null);
+  }
+
   Future<void> load(int tmdbId, String mediaType) async {
     _state = const SeerrMediaDetailState(isLoading: true);
     notifyListeners();
@@ -145,7 +174,6 @@ class SeerrMediaDetailViewModel extends ChangeNotifier {
       }
     } catch (e) {
       _state = SeerrMediaDetailState(error: e.toString());
-      debugPrint('[SeerrMediaDetail] Failed to load: $e');
     }
     notifyListeners();
   }
@@ -166,8 +194,7 @@ class SeerrMediaDetailViewModel extends ChangeNotifier {
         recommendations: futures[1].results,
       );
       notifyListeners();
-    } catch (e) {
-      debugPrint('[SeerrMediaDetail] Failed to load related: $e');
+    } catch (_) {
     }
   }
 
@@ -195,30 +222,57 @@ class SeerrMediaDetailViewModel extends ChangeNotifier {
         serverId: serverId,
       );
 
-      // Reload details to get updated mediaInfo
+      await _reloadDetails('Request submitted');
+    } catch (e) {
+      _state = _state.copyWith(
+        isRequesting: false,
+        requestError: e.toString(),
+      );
+    }
+    notifyListeners();
+  }
+
+  Future<void> cancelRequests(List<int> requestIds) async {
+    _state = _state.copyWith(isRequesting: true, requestError: null, requestSuccess: null);
+    notifyListeners();
+
+    try {
+      for (final id in requestIds) {
+        await _repo.deleteRequest(id);
+      }
+      await _reloadDetails('Request cancelled');
+    } catch (e) {
+      _state = _state.copyWith(
+        isRequesting: false,
+        requestError: e.toString(),
+      );
+    }
+    notifyListeners();
+  }
+
+  Future<void> _reloadDetails(String successMessage) async {
+    try {
       if (_state.isTv) {
         final details = await _repo.getTvDetails(_state.tmdbId);
         _state = _state.copyWith(
           tv: details,
           isRequesting: false,
-          requestSuccess: 'Request submitted',
+          requestSuccess: successMessage,
         );
       } else {
         final details = await _repo.getMovieDetails(_state.tmdbId);
         _state = _state.copyWith(
           movie: details,
           isRequesting: false,
-          requestSuccess: 'Request submitted',
+          requestSuccess: successMessage,
         );
       }
-    } catch (e) {
+    } catch (_) {
       _state = _state.copyWith(
         isRequesting: false,
-        requestError: e.toString(),
+        requestSuccess: successMessage,
       );
-      debugPrint('[SeerrMediaDetail] Request failed: $e');
     }
-    notifyListeners();
   }
 
   bool get canRequest {
