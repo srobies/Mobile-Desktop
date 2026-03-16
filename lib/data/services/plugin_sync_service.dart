@@ -4,6 +4,7 @@ import 'package:jellyfin_preference/jellyfin_preference.dart';
 import 'package:server_core/server_core.dart';
 
 import '../../data/repositories/seerr_repository.dart';
+import '../../preference/home_section_config.dart';
 import '../../preference/preference_constants.dart' as prefs;
 import '../../preference/user_preferences.dart';
 import '../../util/platform_detection.dart';
@@ -237,6 +238,25 @@ class PluginSyncService {
       _store.set(UserPreferences.blockedRatings, blocked);
     }
 
+    if (resolved['homeRowOrder'] is List) {
+      final serverOrder = (resolved['homeRowOrder'] as List).cast<String>();
+      final sections = <HomeSectionConfig>[];
+      var order = 0;
+      for (final name in serverOrder) {
+        final type = prefs.HomeSectionType.fromSerialized(name);
+        if (type == prefs.HomeSectionType.none) continue;
+        sections.add(HomeSectionConfig(type: type, enabled: true, order: order++));
+      }
+      final enabledTypes = sections.map((s) => s.type).toSet();
+      for (final type in prefs.HomeSectionType.values) {
+        if (type == prefs.HomeSectionType.none) continue;
+        if (!enabledTypes.contains(type)) {
+          sections.add(HomeSectionConfig(type: type, enabled: false, order: order++));
+        }
+      }
+      _prefs.setHomeSectionsConfig(sections);
+    }
+
     _prefs.notifyPreferenceChanged();
   }
 
@@ -350,6 +370,10 @@ class PluginSyncService {
       'jellyseerrEnabled': _prefs.get(UserPreferences.seerrEnabled),
       'mdblistRatingSources':
           _prefs.get(UserPreferences.enabledRatings).split(','),
+      'homeRowOrder': _prefs.homeSectionsConfig
+          .where((c) => c.enabled)
+          .map((c) => c.type.serializedName)
+          .toList(),
     };
   }
 }

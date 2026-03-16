@@ -6,6 +6,7 @@ enum HomeRowType {
   nextUp,
   latestMedia,
   libraryTiles,
+  libraryTilesSmall,
   playlists,
   liveTv,
   liveTvOnNow,

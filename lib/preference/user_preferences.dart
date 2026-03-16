@@ -376,7 +376,7 @@ class UserPreferences extends ChangeNotifier {
 
   static final homeRowsUniversalImageType = EnumPreference(
     key: 'homeRowsUniversalImageType',
-    defaultValue: ImageType.poster,
+    defaultValue: ImageType.thumb,
     values: ImageType.values,
   );
   static final detailsBackgroundBlurAmount = Preference(
@@ -605,7 +605,7 @@ class UserPreferences extends ChangeNotifier {
   static EnumPreference<ImageType> libraryImageType(String libraryId) =>
       EnumPreference(
         key: 'library_image_type_$libraryId',
-        defaultValue: ImageType.poster,
+        defaultValue: ImageType.thumb,
         values: ImageType.values,
       );
 

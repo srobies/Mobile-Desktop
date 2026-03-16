@@ -125,8 +125,9 @@ class HomeViewModel extends ChangeNotifier {
       case HomeSectionType.playlists:
         return [await _dataSource.loadPlaylists(_serverId)];
       case HomeSectionType.libraryTilesSmall:
+        return [await _dataSource.loadLibraryTiles(_serverId, HomeRowType.libraryTiles)];
       case HomeSectionType.libraryButtons:
-        return [await _dataSource.loadLibraryTiles(_serverId)];
+        return [await _dataSource.loadLibraryTiles(_serverId, HomeRowType.libraryTilesSmall)];
       case HomeSectionType.liveTv:
         final rows = <HomeRow>[
           const HomeRow(
@@ -170,7 +171,8 @@ class HomeViewModel extends ChangeNotifier {
       if (collectionType == 'music' ||
           collectionType == 'books' ||
           collectionType == 'playlists' ||
-          collectionType == 'boxsets') {
+          collectionType == 'boxsets' ||
+          collectionType == 'livetv') {
         continue;
       }
       final id = data['Id'] as String;
@@ -213,10 +215,14 @@ class HomeViewModel extends ChangeNotifier {
           rowType: HomeRowType.playlists, isLoading: true,
         );
       case HomeSectionType.libraryTilesSmall:
+        return const HomeRow(
+          id: 'libraryTiles', title: 'My Media',
+          rowType: HomeRowType.libraryTiles, isLoading: true,
+        );
       case HomeSectionType.libraryButtons:
         return const HomeRow(
-          id: 'libraryTiles', title: 'My Libraries',
-          rowType: HomeRowType.libraryTiles, isLoading: true,
+          id: 'libraryTilesSmall', title: 'My Media',
+          rowType: HomeRowType.libraryTilesSmall, isLoading: true,
         );
       case HomeSectionType.liveTv:
       case HomeSectionType.activeRecordings:

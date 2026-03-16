@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
+import 'package:server_core/server_core.dart';
 
+import '../../../data/services/plugin_sync_service.dart';
 import '../../../preference/home_section_config.dart';
 import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
@@ -15,26 +17,37 @@ class HomeSectionsScreen extends StatefulWidget {
 class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
   final _prefs = GetIt.instance<UserPreferences>();
   late List<HomeSectionConfig> _sections;
+  HomeSectionConfig? _mediaBarConfig;
 
   @override
   void initState() {
     super.initState();
-    _sections = _prefs.homeSectionsConfig;
+    final all = _prefs.homeSectionsConfig;
+    _mediaBarConfig = all.where((s) => s.type == HomeSectionType.mediaBar).firstOrNull;
+    _sections = all.where((s) => s.type != HomeSectionType.mediaBar).toList();
   }
 
   void _save() {
     for (var i = 0; i < _sections.length; i++) {
       _sections[i] = _sections[i].copyWith(order: i);
     }
-    _prefs.setHomeSectionsConfig(_sections);
+    final toSave = [..._sections];
+    if (_mediaBarConfig != null) toSave.add(_mediaBarConfig!);
+    _prefs.setHomeSectionsConfig(toSave);
+
+    final syncService = GetIt.instance<PluginSyncService>();
+    if (syncService.pluginAvailable) {
+      final client = GetIt.instance<MediaServerClient>();
+      syncService.pushSettings(client);
+    }
   }
 
   String _labelFor(HomeSectionType type) => switch (type) {
     HomeSectionType.mediaBar => 'Media Bar',
     HomeSectionType.latestMedia => 'Latest Media',
     HomeSectionType.recentlyReleased => 'Recently Released',
-    HomeSectionType.libraryTilesSmall => 'Library Tiles (Small)',
-    HomeSectionType.libraryButtons => 'Library Buttons',
+    HomeSectionType.libraryTilesSmall => 'My Media',
+    HomeSectionType.libraryButtons => 'My Media (Small)',
     HomeSectionType.resume => 'Continue Watching',
     HomeSectionType.resumeAudio => 'Resume Audio',
     HomeSectionType.resumeBook => 'Resume Books',

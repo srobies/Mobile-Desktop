@@ -111,14 +111,14 @@ class RowDataSource {
     );
   }
 
-  Future<HomeRow> loadLibraryTiles(String serverId) async {
+  Future<HomeRow> loadLibraryTiles(String serverId, [HomeRowType rowType = HomeRowType.libraryTiles]) async {
     final response = await _client.userViewsApi.getUserViews();
     return _buildRow(
-      id: 'libraryTiles',
-      title: 'My Libraries',
+      id: rowType == HomeRowType.libraryTilesSmall ? 'libraryTilesSmall' : 'libraryTiles',
+      title: 'My Media',
       response: response,
       serverId: serverId,
-      rowType: HomeRowType.libraryTiles,
+      rowType: rowType,
     );
   }
 
@@ -279,6 +279,7 @@ class RowDataSource {
       case HomeRowType.nextUp:
       case HomeRowType.latestMedia:
       case HomeRowType.libraryTiles:
+      case HomeRowType.libraryTilesSmall:
       case HomeRowType.liveTv:
       case HomeRowType.liveTvOnNow:
       case HomeRowType.activeRecordings:

@@ -58,6 +58,7 @@ class _HomeShellState extends State<_HomeShell> {
   StreamSubscription<String?>? _backgroundSub;
   bool _isHoverPaused = false;
   bool _isScrolledToTop = true;
+  String _lastSectionsJson = '';
 
   static const _selectionDelay = Duration(milliseconds: 150);
   static const _backdropDelay = Duration(milliseconds: 200);
@@ -73,7 +74,8 @@ class _HomeShellState extends State<_HomeShell> {
     _viewModel = GetIt.instance<HomeViewModel>();
     _viewModel.addListener(_onViewModelChanged);
     _viewModel.mediaBarViewModel.addListener(_onViewModelChanged);
-    _userPrefs.addListener(_onViewModelChanged);
+    _lastSectionsJson = _userPrefs.get(UserPreferences.homeSectionsJson);
+    _userPrefs.addListener(_onPrefsChanged);
     _viewModel.load();
   }
 
@@ -85,12 +87,22 @@ class _HomeShellState extends State<_HomeShell> {
     _backgroundSub?.cancel();
     _viewModel.mediaBarViewModel.removeListener(_onViewModelChanged);
     _viewModel.removeListener(_onViewModelChanged);
-    _userPrefs.removeListener(_onViewModelChanged);
+    _userPrefs.removeListener(_onPrefsChanged);
     super.dispose();
   }
 
   void _onViewModelChanged() {
     if (mounted) setState(() {});
+  }
+
+  void _onPrefsChanged() {
+    if (!mounted) return;
+    final currentJson = _userPrefs.get(UserPreferences.homeSectionsJson);
+    if (currentJson != _lastSectionsJson) {
+      _lastSectionsJson = currentJson;
+      _viewModel.refresh();
+    }
+    setState(() {});
   }
 
   void onItemSelected(AggregatedItem? item) {
@@ -373,9 +385,13 @@ class _ContentRowsState extends State<_ContentRows> {
               if (row.rowType == HomeRowType.liveTv) {
                 return _buildLiveTvRow(row, focusColor);
               }
+              if (row.rowType == HomeRowType.libraryTilesSmall) {
+                return _buildLibraryButtonsRow(row, focusColor);
+              }
               double maxCardHeight = 0;
               final useLandscape = row.rowType == HomeRowType.resume ||
-                  row.rowType == HomeRowType.nextUp;
+                  row.rowType == HomeRowType.nextUp ||
+                  row.rowType == HomeRowType.libraryTiles;
               final cards = row.items.map((item) {
                 final ar = useLandscape ? 16 / 9 : MediaCard.aspectRatioForType(item.type);
                 final height = ar > 1
@@ -417,7 +433,13 @@ class _ContentRowsState extends State<_ContentRows> {
                     }
                     widget.onItemSelected(item);
                   },
-                  onTap: () => context.push(Destinations.item(item.id)),
+                  onTap: () {
+                    if (row.rowType == HomeRowType.libraryTiles) {
+                      _navigateToLibrary(context, item);
+                    } else {
+                      context.push(Destinations.item(item.id));
+                    }
+                  },
                 );
               }).toList();
               return LibraryRow(
@@ -495,6 +517,49 @@ class _ContentRowsState extends State<_ContentRows> {
         ),
       ],
     );
+  }
+
+  Widget _buildLibraryButtonsRow(HomeRow row, Color focusColor) {
+    return LibraryRow(
+      title: row.title,
+      rowHeight: 140,
+      children: row.items.map((item) {
+        final collectionType = (item.rawData['CollectionType'] as String? ?? '').toLowerCase();
+        final icon = _iconForCollectionType(collectionType);
+        return GridButtonCard(
+          icon: icon,
+          label: item.name,
+          focusColor: focusColor,
+          onTap: () => _navigateToLibrary(context, item),
+        );
+      }).toList(),
+    );
+  }
+
+  static IconData _iconForCollectionType(String collectionType) {
+    return switch (collectionType) {
+      'movies' => Icons.movie,
+      'tvshows' => Icons.tv,
+      'music' => Icons.music_note,
+      'books' => Icons.book,
+      'photos' => Icons.photo,
+      'homevideos' => Icons.videocam,
+      'livetv' => Icons.live_tv,
+      'playlists' => Icons.playlist_play,
+      'boxsets' => Icons.collections_bookmark,
+      _ => Icons.folder_rounded,
+    };
+  }
+
+  static void _navigateToLibrary(BuildContext context, AggregatedItem item) {
+    final collectionType = (item.rawData['CollectionType'] as String? ?? '').toLowerCase();
+    if (collectionType == 'music') {
+      context.push('/music/${item.id}');
+    } else if (collectionType == 'livetv') {
+      context.push(Destinations.liveTvGuide);
+    } else {
+      context.push(Destinations.library(item.id));
+    }
   }
 
   static String? _resolveImageUrl(
