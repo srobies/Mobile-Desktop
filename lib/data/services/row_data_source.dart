@@ -64,6 +64,7 @@ class RowDataSource {
     final response = await _client.itemsApi.getNextUp(
       limit: _defaultLimit,
       fields: _fields,
+      enableResumable: false,
     );
     return _buildRow(
       id: 'nextUp',

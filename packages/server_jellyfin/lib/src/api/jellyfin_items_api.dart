@@ -79,12 +79,14 @@ class JellyfinItemsApi implements ItemsApi {
     String? parentId,
     int? limit,
     String? fields,
+    bool? enableResumable,
   }) async {
     final response = await _dio.get('/Shows/NextUp', queryParameters: {
       if (seriesId != null) 'SeriesId': seriesId,
       if (parentId != null) 'ParentId': parentId,
       if (limit != null) 'Limit': limit,
       if (fields != null) 'Fields': fields,
+      if (enableResumable != null) 'EnableResumable': enableResumable,
     });
     return response.data as Map<String, dynamic>;
   }

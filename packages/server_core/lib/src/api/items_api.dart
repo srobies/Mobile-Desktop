@@ -30,6 +30,7 @@ abstract class ItemsApi {
     String? parentId,
     int? limit,
     String? fields,
+    bool? enableResumable,
   });
 
   Future<Map<String, dynamic>> getResumeItems({
