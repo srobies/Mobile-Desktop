@@ -197,13 +197,16 @@ class LibraryBrowseViewModel extends ChangeNotifier {
     }
 
     List<String>? includeTypes;
+    List<String>? excludeTypes;
     bool? collapseBoxSets;
+    bool recursive = true;
     if (includeItemTypes != null) {
       includeTypes = includeItemTypes;
     } else {
       switch (_collectionType) {
         case 'movies':
           includeTypes = ['Movie'];
+          excludeTypes = ['BoxSet'];
           collapseBoxSets = false;
           break;
         case 'tvshows':
@@ -211,6 +214,7 @@ class LibraryBrowseViewModel extends ChangeNotifier {
           collapseBoxSets = false;
           break;
         case 'boxsets':
+          recursive = false;
           break;
         default:
           collapseBoxSets = false;
@@ -222,12 +226,13 @@ class LibraryBrowseViewModel extends ChangeNotifier {
       parentId: _effectiveParentId,
       genreIds: genreId != null ? [genreId!] : null,
       includeItemTypes: includeTypes,
+      excludeItemTypes: excludeTypes,
       collapseBoxSetItems: collapseBoxSets,
       sortBy: _sortBy.apiValue,
       sortOrder: _sortDirection == SortDirection.ascending ? 'Ascending' : 'Descending',
       startIndex: startIndex,
       limit: _pageSize,
-      recursive: true,
+      recursive: recursive,
       fields: 'PrimaryImageAspectRatio,BasicSyncInfo,Overview,Genres,CommunityRating,OfficialRating,RunTimeTicks,ProductionYear,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,CriticRating,ProviderIds',
       filters: filters.isEmpty ? null : filters,
       seriesStatus: seriesStatus.isEmpty ? null : seriesStatus,
@@ -238,15 +243,7 @@ class LibraryBrowseViewModel extends ChangeNotifier {
     final rawItems = (response['Items'] as List?) ?? [];
     _totalCount = response['TotalRecordCount'] as int? ?? rawItems.length;
 
-    final filtered = _collectionType != 'boxsets'
-        ? rawItems.cast<Map<String, dynamic>>().where((raw) => raw['Type'] != 'BoxSet').toList()
-        : rawItems.cast<Map<String, dynamic>>().toList();
-
-    if (filtered.length < rawItems.length) {
-      _totalCount -= (rawItems.length - filtered.length);
-    }
-
-    final mapped = filtered.map((raw) => AggregatedItem(
+    final mapped = rawItems.cast<Map<String, dynamic>>().map((raw) => AggregatedItem(
       id: raw['Id'] as String,
       serverId: _client.baseUrl,
       rawData: raw,
