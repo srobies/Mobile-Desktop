@@ -55,6 +55,9 @@ class Destinations {
   static const nextUp = '/player/next-up/:itemId';
   static const stillWatching = '/player/still-watching/:itemId';
 
+  // Admin
+  static const admin = '/admin';
+
   // Settings
   static const settings = '/settings';
   static const settingsPlayback = '/settings/playback';

@@ -3,6 +3,7 @@ sealed class User {
   String get name;
   String get serverId;
   String? get imageTag;
+  bool get isAdministrator;
 
   const User();
 }
@@ -18,6 +19,8 @@ class PrivateUser extends User {
   final DateTime lastUsed;
   @override
   final String? imageTag;
+  @override
+  final bool isAdministrator;
 
   const PrivateUser({
     required this.id,
@@ -26,6 +29,7 @@ class PrivateUser extends User {
     required this.accessToken,
     required this.lastUsed,
     this.imageTag,
+    this.isAdministrator = false,
   });
 
   Map<String, dynamic> toJson() => {
@@ -33,6 +37,7 @@ class PrivateUser extends User {
         'accessToken': accessToken,
         'lastUsed': lastUsed.toIso8601String(),
         'imageTag': imageTag,
+        'isAdministrator': isAdministrator,
       };
 
   factory PrivateUser.fromJson(
@@ -48,6 +53,27 @@ class PrivateUser extends User {
       lastUsed: DateTime.tryParse(json['lastUsed'] as String? ?? '') ??
           DateTime.now(),
       imageTag: json['imageTag'] as String?,
+      isAdministrator: json['isAdministrator'] as bool? ?? false,
+    );
+  }
+
+  PrivateUser copyWith({
+    String? id,
+    String? name,
+    String? serverId,
+    String? accessToken,
+    DateTime? lastUsed,
+    String? imageTag,
+    bool? isAdministrator,
+  }) {
+    return PrivateUser(
+      id: id ?? this.id,
+      name: name ?? this.name,
+      serverId: serverId ?? this.serverId,
+      accessToken: accessToken ?? this.accessToken,
+      lastUsed: lastUsed ?? this.lastUsed,
+      imageTag: imageTag ?? this.imageTag,
+      isAdministrator: isAdministrator ?? this.isAdministrator,
     );
   }
 }
@@ -62,6 +88,8 @@ class PublicUser extends User {
   final bool hasPassword;
   @override
   final String? imageTag;
+  @override
+  final bool isAdministrator;
 
   const PublicUser({
     required this.id,
@@ -69,5 +97,6 @@ class PublicUser extends User {
     required this.serverId,
     required this.hasPassword,
     this.imageTag,
+    this.isAdministrator = false,
   });
 }

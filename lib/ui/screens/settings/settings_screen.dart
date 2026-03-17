@@ -1,20 +1,30 @@
 import 'package:flutter/material.dart';
+import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../auth/repositories/session_repository.dart';
+import '../../../di/providers.dart';
 import '../../navigation/destinations.dart';
 import '../../../util/platform_detection.dart';
 
-class SettingsScreen extends StatelessWidget {
+class SettingsScreen extends ConsumerWidget {
   const SettingsScreen({super.key});
 
   @override
-  Widget build(BuildContext context) {
+  Widget build(BuildContext context, WidgetRef ref) {
+    final isAdmin = ref.watch(isAdminProvider);
     return Scaffold(
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
+          if (isAdmin)
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings),
+              title: const Text('Server Administration'),
+              subtitle: const Text('Manage server settings, users, libraries'),
+              onTap: () => context.push(Destinations.admin),
+            ),
           const _SettingsSection(title: 'Account'),
           ListTile(
             leading: const Icon(Icons.lock),

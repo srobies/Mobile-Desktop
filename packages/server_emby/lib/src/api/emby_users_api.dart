@@ -8,6 +8,13 @@ class EmbyUsersApi implements UsersApi {
   EmbyUsersApi(this._dio, this._getUserId);
 
   @override
+  Future<ServerUser> getCurrentUser() async {
+    final userId = _getUserId();
+    final response = await _dio.get('/Users/$userId');
+    return ServerUser.fromJson(response.data as Map<String, dynamic>);
+  }
+
+  @override
   Future<UserConfiguration> getUserConfiguration() async {
     final userId = _getUserId();
     final response = await _dio.get('/Users/$userId');

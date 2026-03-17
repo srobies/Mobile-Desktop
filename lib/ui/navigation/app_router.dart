@@ -1,8 +1,11 @@
 import 'package:flutter/foundation.dart';
+import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../auth/repositories/session_repository.dart';
+import '../../auth/repositories/user_repository.dart';
+import '../../di/injection.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/server_screen.dart';
 import '../screens/auth/server_select_screen.dart';
@@ -74,6 +77,11 @@ final appRouter = GoRouter(
 
     final session = GetIt.instance<SessionRepository>();
     if (session.activeUserId == null) return Destinations.startup;
+
+    if (path.startsWith('/admin')) {
+      final user = getIt<UserRepository>().currentUser;
+      if (user == null || !user.isAdministrator) return Destinations.home;
+    }
 
     return null;
   },
@@ -292,6 +300,14 @@ final appRouter = GoRouter(
         final itemId = state.pathParameters['itemId']!;
         return StillWatchingScreen(itemId: itemId);
       },
+    ),
+
+    // Admin
+    GoRoute(
+      path: Destinations.admin,
+      builder: (context, state) => const Scaffold(
+        body: Center(child: Text('Server Administration')),
+      ),
     ),
 
     // Settings

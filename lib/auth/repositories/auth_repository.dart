@@ -95,6 +95,8 @@ class AuthRepository {
         (userJson?['PrimaryImageTag'] as String?) ??
         ((userJson?['ImageTags'] as Map<String, dynamic>?)?['Primary']
             as String?);
+    final policyJson = userJson?['Policy'] as Map<String, dynamic>?;
+    final isAdmin = policyJson?['IsAdministrator'] as bool? ?? false;
 
     if (accessToken == null || userId == null) {
       const state = ApiClientError(error: 'Invalid auth response');
@@ -112,6 +114,7 @@ class AuthRepository {
       accessToken: accessToken,
       lastUsed: DateTime.now(),
       imageTag: imageTag,
+      isAdministrator: isAdmin,
     );
 
     await _authStore.putUser(user);
