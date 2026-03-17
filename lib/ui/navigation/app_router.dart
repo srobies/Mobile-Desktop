@@ -78,6 +78,7 @@ import '../screens/admin/settings/admin_playback_settings_screen.dart';
 import '../screens/admin/plugins/admin_plugins_screen.dart';
 import '../screens/admin/plugins/admin_plugin_detail_screen.dart';
 import '../screens/admin/plugins/admin_repositories_screen.dart';
+import '../screens/admin/devices/admin_devices_screen.dart';
 import 'destinations.dart';
 
 const _authRoutes = {
@@ -402,7 +403,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminDevices,
-          builder: (context, state) => const _AdminPlaceholder(title: 'Devices'),
+          builder: (context, state) => const AdminDevicesScreen(),
         ),
         GoRoute(
           path: Destinations.adminKeys,

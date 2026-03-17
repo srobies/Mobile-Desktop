@@ -67,6 +67,7 @@ class AdminShellScreen extends StatelessWidget {
     Destinations.adminPlugins,
     Destinations.adminRepositories,
     Destinations.adminActivity,
+    Destinations.adminDevices,
   };
 
   static bool _isSubPage(String path) => !_topLevelPaths.contains(path);
