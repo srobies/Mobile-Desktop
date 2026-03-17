@@ -13,6 +13,9 @@ import 'api/jellyfin_live_tv_api.dart';
 import 'api/jellyfin_instant_mix_api.dart';
 import 'api/jellyfin_display_preferences_api.dart';
 import 'api/jellyfin_users_api.dart';
+import 'api/jellyfin_admin_system_api.dart';
+import 'api/jellyfin_admin_users_api.dart';
+import 'api/jellyfin_admin_library_api.dart';
 
 class JellyfinMediaServerClient extends MediaServerClient {
   final Dio _dio;
@@ -110,6 +113,15 @@ class JellyfinMediaServerClient extends MediaServerClient {
 
   @override
   late final UsersApi usersApi = JellyfinUsersApi(_dio);
+
+  @override
+  late final AdminSystemApi adminSystemApi = JellyfinAdminSystemApi(_dio);
+
+  @override
+  late final AdminUsersApi adminUsersApi = JellyfinAdminUsersApi(_dio);
+
+  @override
+  late final AdminLibraryApi adminLibraryApi = JellyfinAdminLibraryApi(_dio);
 
   @override
   void dispose() {

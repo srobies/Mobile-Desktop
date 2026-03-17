@@ -25,4 +25,8 @@ export 'src/api/live_tv_api.dart';
 export 'src/api/instant_mix_api.dart';
 export 'src/api/display_preferences_api.dart';
 export 'src/api/users_api.dart';
+export 'src/api/admin_system_api.dart';
+export 'src/api/admin_users_api.dart';
+export 'src/api/admin_library_api.dart';
+export 'src/models/admin_models.dart';
 export 'src/feature/feature_detector.dart';

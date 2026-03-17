@@ -122,6 +122,18 @@ class EmbyMediaServerClient extends MediaServerClient {
   late final UsersApi usersApi = EmbyUsersApi(_dio, _requireUserId);
 
   @override
+  AdminSystemApi get adminSystemApi =>
+      throw UnsupportedError('Admin not supported on Emby yet');
+
+  @override
+  AdminUsersApi get adminUsersApi =>
+      throw UnsupportedError('Admin not supported on Emby yet');
+
+  @override
+  AdminLibraryApi get adminLibraryApi =>
+      throw UnsupportedError('Admin not supported on Emby yet');
+
+  @override
   void dispose() {
     _dio.close();
   }
