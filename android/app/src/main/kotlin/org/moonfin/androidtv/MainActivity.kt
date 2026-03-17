@@ -1,4 +1,4 @@
-package org.moonfin.tv
+package org.moonfin.androidtv
 
 import android.app.PendingIntent
 import android.app.PictureInPictureParams
@@ -26,8 +26,8 @@ class MainActivity : FlutterActivity() {
     private var dismissRunnable: Runnable? = null
 
     companion object {
-        private const val CHANNEL = "org.moonfin.tv/pip"
-        private const val ACTION_PLAY_PAUSE = "org.moonfin.tv.ACTION_PIP_PLAY_PAUSE"
+        private const val CHANNEL = "org.moonfin.androidtv/pip"
+        private const val ACTION_PLAY_PAUSE = "org.moonfin.androidtv.ACTION_PIP_PLAY_PAUSE"
         private const val DISMISS_DELAY_MS = 300L
     }
 
