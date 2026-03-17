@@ -134,7 +134,7 @@ class AdminLibrariesScreen extends ConsumerWidget {
                           ],
                         ),
                         onTap: () =>
-                            context.go(Destinations.adminLibrary(lib.itemId)),
+                            context.push(Destinations.adminLibrary(lib.itemId)),
                       ),
                     );
                   },
@@ -154,7 +154,7 @@ class AdminLibrariesScreen extends ConsumerWidget {
                 const SizedBox(height: 8),
                 FloatingActionButton.extended(
                   heroTag: 'add',
-                  onPressed: () => context.go(Destinations.adminLibrariesAdd),
+                  onPressed: () => context.push(Destinations.adminLibrariesAdd),
                   icon: const Icon(Icons.add),
                   label: const Text('Add Library'),
                 ),
@@ -170,7 +170,7 @@ class AdminLibrariesScreen extends ConsumerWidget {
       BuildContext context, WidgetRef ref, String action, VirtualFolderInfo lib) {
     switch (action) {
       case 'edit':
-        context.go(Destinations.adminLibrary(lib.itemId));
+        context.push(Destinations.adminLibrary(lib.itemId));
       case 'rename':
         showRenameLibraryDialog(
           context,

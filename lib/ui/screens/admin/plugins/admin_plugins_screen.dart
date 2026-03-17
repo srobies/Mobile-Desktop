@@ -236,7 +236,7 @@ class _InstalledTab extends ConsumerWidget {
             return _InstalledPluginTile(
               plugin: plugin,
               onTap: () =>
-                  context.go(Destinations.adminPlugin(plugin.id)),
+                  context.push(Destinations.adminPlugin(plugin.id)),
               onToggle: () => onToggle(plugin),
               onUninstall: () => onUninstall(plugin),
             );

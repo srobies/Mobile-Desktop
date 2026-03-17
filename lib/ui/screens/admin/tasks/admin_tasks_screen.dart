@@ -79,7 +79,7 @@ class _AdminTasksScreenState extends ConsumerState<AdminTasksScreen> {
               onStart: _startTask,
               onStop: _stopTask,
               onTap: (task) =>
-                  context.go(Destinations.adminTask(task.id)),
+                  context.push(Destinations.adminTask(task.id)),
             );
           },
         );

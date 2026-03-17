@@ -37,7 +37,7 @@ class _AdminUserAddScreenState extends ConsumerState<AdminUserAddScreen> {
         _passwordController.text.isEmpty ? null : _passwordController.text,
       );
       ref.invalidate(adminUsersListProvider);
-      if (mounted) context.go(Destinations.adminUsers);
+      if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
@@ -95,7 +95,7 @@ class _AdminUserAddScreenState extends ConsumerState<AdminUserAddScreen> {
                 const SizedBox(width: 12),
                 TextButton(
                   onPressed:
-                      _saving ? null : () => context.go(Destinations.adminUsers),
+                      _saving ? null : () => context.pop(),
                   child: const Text('Cancel'),
                 ),
               ],

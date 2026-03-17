@@ -85,28 +85,23 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
 
     return RefreshIndicator(
       onRefresh: _loadData,
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final crossAxisCount = constraints.maxWidth >= 800 ? 2 : 1;
-          return GridView.count(
-            crossAxisCount: crossAxisCount,
-            childAspectRatio: crossAxisCount == 2 ? 1.6 : 2.2,
-            mainAxisSpacing: 16,
-            crossAxisSpacing: 16,
-            padding: const EdgeInsets.all(16),
-            children: [
-              ServerInfoCard(systemInfo: _systemInfo!),
-              ServerActionsCard(
-                client: _client,
-                canSelfRestart: _systemInfo!['CanSelfRestart'] as bool? ?? false,
-                onActionComplete: _loadData,
-              ),
-              ActiveSessionsCard(sessions: _sessions!),
-              ActivityLogCard(activityLog: _activityLog!),
-              ServerPathsCard(storageInfo: _storageInfo!),
-            ],
-          );
-        },
+      child: ListView(
+        padding: const EdgeInsets.all(16),
+        children: [
+          ServerInfoCard(systemInfo: _systemInfo!),
+          const SizedBox(height: 16),
+          ServerActionsCard(
+            client: _client,
+            canSelfRestart: _systemInfo!['CanSelfRestart'] as bool? ?? false,
+            onActionComplete: _loadData,
+          ),
+          const SizedBox(height: 16),
+          ActiveSessionsCard(sessions: _sessions!),
+          const SizedBox(height: 16),
+          ActivityLogCard(activityLog: _activityLog!),
+          const SizedBox(height: 16),
+          ServerPathsCard(storageInfo: _storageInfo!),
+        ],
       ),
     );
   }

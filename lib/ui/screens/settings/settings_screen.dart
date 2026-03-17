@@ -18,13 +18,6 @@ class SettingsScreen extends ConsumerWidget {
       appBar: AppBar(title: const Text('Settings')),
       body: ListView(
         children: [
-          if (isAdmin)
-            ListTile(
-              leading: const Icon(Icons.admin_panel_settings),
-              title: const Text('Server Administration'),
-              subtitle: const Text('Manage server settings, users, libraries'),
-              onTap: () => context.push(Destinations.admin),
-            ),
           const _SettingsSection(title: 'Account'),
           ListTile(
             leading: const Icon(Icons.lock),
@@ -44,6 +37,15 @@ class SettingsScreen extends ConsumerWidget {
             subtitle: const Text('Content rating restrictions'),
             onTap: () => context.push(Destinations.settingsParental),
           ),
+          if (isAdmin) ...[
+            const _SettingsSection(title: 'Administration'),
+            ListTile(
+              leading: const Icon(Icons.admin_panel_settings),
+              title: const Text('Server Administration'),
+              subtitle: const Text('Manage server settings, users, libraries'),
+              onTap: () => context.push(Destinations.admin),
+            ),
+          ],
           const _SettingsSection(title: 'Customization'),
           ListTile(
             leading: const Icon(Icons.palette),

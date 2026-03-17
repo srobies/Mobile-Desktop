@@ -24,36 +24,33 @@ class ActiveSessionsCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: sessions.isEmpty
-                  ? const Center(child: Text('No active sessions'))
-                  : ListView.separated(
-                      itemCount: sessions.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final session = sessions[index];
-                        final userName = session['UserName'] as String? ?? 'Unknown';
-                        final client = session['Client'] as String? ?? '';
-                        final device = session['DeviceName'] as String? ?? '';
-                        final nowPlaying = session['NowPlayingItem'] as Map<String, dynamic>?;
-                        final playingName = nowPlaying?['Name'] as String?;
+            if (sessions.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text('No active sessions')),
+              )
+            else
+              ...sessions.map((session) {
+                final userName = session['UserName'] as String? ?? 'Unknown';
+                final client = session['Client'] as String? ?? '';
+                final device = session['DeviceName'] as String? ?? '';
+                final nowPlaying = session['NowPlayingItem'] as Map<String, dynamic>?;
+                final playingName = nowPlaying?['Name'] as String?;
 
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: CircleAvatar(
-                            radius: 16,
-                            child: Text(userName.isNotEmpty ? userName[0].toUpperCase() : '?'),
-                          ),
-                          title: Text(userName),
-                          subtitle: Text(
-                            playingName != null ? 'Playing: $playingName' : '$client · $device',
-                            overflow: TextOverflow.ellipsis,
-                          ),
-                        );
-                      },
-                    ),
-            ),
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: CircleAvatar(
+                    radius: 16,
+                    child: Text(userName.isNotEmpty ? userName[0].toUpperCase() : '?'),
+                  ),
+                  title: Text(userName),
+                  subtitle: Text(
+                    playingName != null ? 'Playing: $playingName' : '$client · $device',
+                    overflow: TextOverflow.ellipsis,
+                  ),
+                );
+              }),
           ],
         ),
       ),

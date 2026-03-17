@@ -25,31 +25,28 @@ class ActivityLogCard extends StatelessWidget {
               ],
             ),
             const SizedBox(height: 12),
-            Expanded(
-              child: items.isEmpty
-                  ? const Center(child: Text('No recent activity'))
-                  : ListView.separated(
-                      itemCount: items.length,
-                      separatorBuilder: (_, __) => const Divider(height: 1),
-                      itemBuilder: (context, index) {
-                        final entry = items[index];
-                        return ListTile(
-                          dense: true,
-                          contentPadding: EdgeInsets.zero,
-                          leading: _severityIcon(entry.severity, theme),
-                          title: Text(
-                            entry.name,
-                            overflow: TextOverflow.ellipsis,
-                            maxLines: 1,
-                          ),
-                          subtitle: Text(
-                            _formatDate(entry.date),
-                            style: theme.textTheme.bodySmall,
-                          ),
-                        );
-                      },
-                    ),
-            ),
+            if (items.isEmpty)
+              const Padding(
+                padding: EdgeInsets.symmetric(vertical: 24),
+                child: Center(child: Text('No recent activity')),
+              )
+            else
+              ...items.map((entry) {
+                return ListTile(
+                  dense: true,
+                  contentPadding: EdgeInsets.zero,
+                  leading: _severityIcon(entry.severity, theme),
+                  title: Text(
+                    entry.name,
+                    overflow: TextOverflow.ellipsis,
+                    maxLines: 1,
+                  ),
+                  subtitle: Text(
+                    _formatDate(entry.date),
+                    style: theme.textTheme.bodySmall,
+                  ),
+                );
+              }),
           ],
         ),
       ),

@@ -131,7 +131,7 @@ class AdminUsersScreen extends ConsumerWidget {
                         ],
                       ),
                       onTap: () =>
-                          context.go(Destinations.adminUser(user.id)),
+                          context.push(Destinations.adminUser(user.id)),
                     ),
                   );
                 },
@@ -140,7 +140,7 @@ class AdminUsersScreen extends ConsumerWidget {
             right: 16,
             bottom: 16,
             child: FloatingActionButton.extended(
-              onPressed: () => context.go(Destinations.adminUsersAdd),
+              onPressed: () => context.push(Destinations.adminUsersAdd),
               icon: const Icon(Icons.person_add),
               label: const Text('Add User'),
             ),

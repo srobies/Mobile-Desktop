@@ -13,17 +13,23 @@ class AdminShellScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final isWide = MediaQuery.sizeOf(context).width >= 900;
     final currentPath = GoRouterState.of(context).uri.path;
+    final canGoBack = !isWide && _isSubPage(currentPath);
 
     return Scaffold(
       appBar: AppBar(
         leading: isWide
             ? null
-            : Builder(
-                builder: (ctx) => IconButton(
-                  icon: const Icon(Icons.menu),
-                  onPressed: () => Scaffold.of(ctx).openDrawer(),
-                ),
-              ),
+            : canGoBack
+                ? IconButton(
+                    icon: const Icon(Icons.arrow_back),
+                    onPressed: () => context.pop(),
+                  )
+                : Builder(
+                    builder: (ctx) => IconButton(
+                      icon: const Icon(Icons.menu),
+                      onPressed: () => Scaffold.of(ctx).openDrawer(),
+                    ),
+                  ),
         title: const Text('Server Administration'),
         actions: [
           IconButton(
@@ -51,4 +57,17 @@ class AdminShellScreen extends StatelessWidget {
           : child,
     );
   }
+
+  static const _topLevelPaths = {
+    Destinations.admin,
+    Destinations.adminUsers,
+    Destinations.adminLibraries,
+    Destinations.adminSettings,
+    Destinations.adminTasks,
+    Destinations.adminPlugins,
+    Destinations.adminRepositories,
+    Destinations.adminActivity,
+  };
+
+  static bool _isSubPage(String path) => !_topLevelPaths.contains(path);
 }

@@ -200,7 +200,7 @@ class _FilesystemBrowserState extends State<FilesystemBrowser> {
                 final entry = _entries[index];
                 final name = entry['Name'] as String? ?? '';
                 final path = entry['Path'] as String? ?? '';
-                final isDir = entry['Type'] as String? == 'Directory' ||
+                final isDir = (entry['Type'] as String?) == 'Directory' ||
                     entry['IsDirectory'] == true;
                 return ListTile(
                   leading: Icon(isDir ? Icons.folder : Icons.storage),

@@ -82,7 +82,7 @@ class _AdminLibraryAddScreenState
             refreshLibrary: true,
           );
       ref.invalidate(adminLibrariesProvider);
-      if (mounted) context.go(Destinations.adminLibraries);
+      if (mounted) context.pop();
     } catch (e) {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(

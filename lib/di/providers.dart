@@ -34,8 +34,14 @@ final userPreferencesProvider = Provider<UserPreferences>(
 
 final currentUserProvider = StreamProvider<User?>((ref) {
   final repo = getIt<UserRepository>();
-  return repo.currentUserStream;
+  // Broadcast streams don't replay past events, so seed with the current value
+  return _seededStream(repo);
 });
+
+Stream<User?> _seededStream(UserRepository repo) async* {
+  yield repo.currentUser;
+  yield* repo.currentUserStream;
+}
 
 final isAdminProvider = Provider<bool>((ref) {
   final userAsync = ref.watch(currentUserProvider);
