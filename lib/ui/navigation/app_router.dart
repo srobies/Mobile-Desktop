@@ -70,6 +70,7 @@ import '../screens/admin/libraries/admin_library_add_screen.dart';
 import '../screens/admin/libraries/admin_library_edit_screen.dart';
 import '../screens/admin/tasks/admin_tasks_screen.dart';
 import '../screens/admin/tasks/admin_task_detail_screen.dart';
+import '../screens/admin/activity/admin_activity_screen.dart';
 import 'destinations.dart';
 
 const _authRoutes = {
@@ -386,7 +387,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminActivity,
-          builder: (context, state) => const _AdminPlaceholder(title: 'Activity Log'),
+          builder: (context, state) => const AdminActivityScreen(),
         ),
         GoRoute(
           path: Destinations.adminDevices,
