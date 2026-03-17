@@ -50,6 +50,7 @@ import '../screens/settings/library_settings_screen.dart';
 import '../screens/settings/media_bar_settings_screen.dart';
 import '../screens/settings/moonfin_settings_screen.dart';
 import '../screens/settings/navigation_settings_screen.dart';
+import '../screens/settings/ratings_config_screen.dart';
 import '../screens/settings/parental_settings_screen.dart';
 import '../screens/settings/pin_code_settings_screen.dart';
 import '../screens/settings/playback_settings_screen.dart';
@@ -349,6 +350,12 @@ final appRouter = GoRouter(
         GoRoute(
           path: 'moonfin',
           builder: (context, state) => const MoonfinSettingsScreen(),
+          routes: [
+            GoRoute(
+              path: 'ratings',
+              builder: (context, state) => const RatingsConfigScreen(),
+            ),
+          ],
         ),
         GoRoute(
           path: 'navigation',

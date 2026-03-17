@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
+import 'package:go_router/go_router.dart';
 
 import '../../../preference/user_preferences.dart';
 import '../../../util/platform_detection.dart';
+import '../../navigation/destinations.dart';
 import '../../widgets/settings/preference_tiles.dart';
 
 class MoonfinSettingsScreen extends StatelessWidget {
@@ -73,6 +75,12 @@ class MoonfinSettingsScreen extends StatelessWidget {
             title: 'Episode Ratings',
             subtitle: 'Show ratings on individual episodes',
             icon: Icons.stars,
+          ),
+          ListTile(
+            leading: const Icon(Icons.reorder),
+            title: const Text('Rating Sources'),
+            subtitle: const Text('Select and reorder rating sources'),
+            onTap: () => context.push(Destinations.settingsRatings),
           ),
           const Divider(),
           if (PlatformDetection.isDesktop)

@@ -70,6 +70,7 @@ class Destinations {
   static const settingsLibrary = '/settings/library';
   static const settingsSeerr = '/settings/seerr-config';
   static const settingsMoonfin = '/settings/moonfin';
+  static const settingsRatings = '/settings/moonfin/ratings';
   static const settingsNavigation = '/settings/navigation';
 
   // Seerr

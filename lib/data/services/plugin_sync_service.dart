@@ -6,6 +6,8 @@ import 'package:server_core/server_core.dart';
 import '../../data/repositories/seerr_repository.dart';
 import '../../preference/home_section_config.dart';
 import '../../preference/preference_constants.dart' as prefs;
+import '../../preference/seerr_preferences.dart';
+import '../../preference/seerr_row_config.dart';
 import '../../preference/user_preferences.dart';
 import '../../util/platform_detection.dart';
 
@@ -13,6 +15,8 @@ class PluginSyncService {
   final UserPreferences _prefs;
   final PreferenceStore _store;
   final _dio = Dio();
+
+  SeerrPreferences get _seerrPrefs => GetIt.instance<SeerrPreferences>();
 
   bool _pluginAvailable = false;
   bool get pluginAvailable => _pluginAvailable;
@@ -179,7 +183,7 @@ class PluginSyncService {
         resolved, 'seasonalSurprise', UserPreferences.seasonalSurprise);
 
     _applyBool(resolved, 'mediaBarEnabled', UserPreferences.mediaBarEnabled);
-    _applyString(resolved, 'mediaBarContentType',
+    _applyString(resolved, 'mediaBarSourceType',
         UserPreferences.mediaBarContentType);
     _applyInt(
         resolved, 'mediaBarItemCount', UserPreferences.mediaBarItemCount);
@@ -193,6 +197,13 @@ class PluginSyncService {
         UserPreferences.mediaBarIntervalMs);
     _applyBool(resolved, 'mediaBarTrailerPreview',
         UserPreferences.mediaBarTrailerPreview);
+
+    _applyStringList(
+        resolved, 'mediaBarLibraryIds', UserPreferences.mediaBarLibraryIds);
+    _applyStringList(resolved, 'mediaBarCollectionIds',
+        UserPreferences.mediaBarCollectionIds);
+    _applyStringList(resolved, 'mediaBarExcludedGenres',
+        UserPreferences.mediaBarExcludedGenres);
 
     _applyBool(
         resolved, 'themeMusicEnabled', UserPreferences.themeMusicEnabled);
@@ -218,6 +229,8 @@ class PluginSyncService {
         resolved, 'mdblistEnabled', UserPreferences.enableAdditionalRatings);
     _applyString(
         resolved, 'mdblistApiKey', UserPreferences.mdblistApiKey);
+    _applyBool(resolved, 'mdblistShowRatingNames',
+        UserPreferences.showRatingLabels);
     _applyBool(resolved, 'tmdbEpisodeRatingsEnabled',
         UserPreferences.enableEpisodeRatings);
     _applyString(resolved, 'tmdbApiKey', UserPreferences.tmdbApiKey);
@@ -255,6 +268,26 @@ class PluginSyncService {
         }
       }
       _prefs.setHomeSectionsConfig(sections);
+    }
+
+    if (resolved['jellyseerrRows'] is Map<String, dynamic>) {
+      final rowsData = resolved['jellyseerrRows'] as Map<String, dynamic>;
+      if (rowsData['rowOrder'] is List) {
+        final serverOrder = (rowsData['rowOrder'] as List).cast<String>();
+        final configs = <SeerrRowConfig>[];
+        var order = 0;
+        for (final name in serverOrder) {
+          final type = prefs.SeerrRowType.fromSerialized(name);
+          configs.add(SeerrRowConfig(type: type, enabled: true, order: order++));
+        }
+        final enabledTypes = configs.map((c) => c.type).toSet();
+        for (final type in prefs.SeerrRowType.values) {
+          if (!enabledTypes.contains(type)) {
+            configs.add(SeerrRowConfig(type: type, enabled: false, order: order++));
+          }
+        }
+        _seerrPrefs.setRowsConfig(configs);
+      }
     }
 
     _prefs.notifyPreferenceChanged();
@@ -320,6 +353,25 @@ class PluginSyncService {
     }
   }
 
+  void _applyStringList(
+    Map<String, dynamic> data,
+    String serverKey,
+    Preference<String> pref,
+  ) {
+    final value = data[serverKey];
+    if (value is List) {
+      _store.set(pref, value.cast<String>().join(','));
+    }
+  }
+
+  List<String> _csvToList(Preference<String> pref) {
+    return _prefs
+        .get(pref)
+        .split(',')
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
   Map<String, dynamic> _buildProfileFromLocal() {
     return {
       'navbarPosition': _prefs.get(UserPreferences.navbarPosition).name,
@@ -340,7 +392,7 @@ class PluginSyncService {
       'confirmExit': _prefs.get(UserPreferences.confirmExit),
       'seasonalSurprise': _prefs.get(UserPreferences.seasonalSurprise),
       'mediaBarEnabled': _prefs.get(UserPreferences.mediaBarEnabled),
-      'mediaBarContentType': _prefs.get(UserPreferences.mediaBarContentType),
+      'mediaBarSourceType': _prefs.get(UserPreferences.mediaBarContentType),
       'mediaBarItemCount':
           int.tryParse(_prefs.get(UserPreferences.mediaBarItemCount)) ?? 10,
       'mediaBarOpacity': _prefs.get(UserPreferences.mediaBarOverlayOpacity),
@@ -350,6 +402,11 @@ class PluginSyncService {
       'mediaBarIntervalMs': _prefs.get(UserPreferences.mediaBarIntervalMs),
       'mediaBarTrailerPreview':
           _prefs.get(UserPreferences.mediaBarTrailerPreview),
+      'mediaBarLibraryIds': _csvToList(UserPreferences.mediaBarLibraryIds),
+      'mediaBarCollectionIds':
+          _csvToList(UserPreferences.mediaBarCollectionIds),
+      'mediaBarExcludedGenres':
+          _csvToList(UserPreferences.mediaBarExcludedGenres),
       'themeMusicEnabled': _prefs.get(UserPreferences.themeMusicEnabled),
       'themeMusicVolume': _prefs.get(UserPreferences.themeMusicVolume),
       'themeMusicOnHomeRows': _prefs.get(UserPreferences.themeMusicOnHomeRows),
@@ -364,16 +421,22 @@ class PluginSyncService {
           _prefs.get(UserPreferences.browsingBackgroundBlurAmount).toString(),
       'mdblistEnabled': _prefs.get(UserPreferences.enableAdditionalRatings),
       'mdblistApiKey': _prefs.get(UserPreferences.mdblistApiKey),
+      'mdblistShowRatingNames': _prefs.get(UserPreferences.showRatingLabels),
       'tmdbEpisodeRatingsEnabled':
           _prefs.get(UserPreferences.enableEpisodeRatings),
       'tmdbApiKey': _prefs.get(UserPreferences.tmdbApiKey),
       'jellyseerrEnabled': _prefs.get(UserPreferences.seerrEnabled),
-      'mdblistRatingSources':
-          _prefs.get(UserPreferences.enabledRatings).split(','),
+      'blockedRatings': _csvToList(UserPreferences.blockedRatings),
+      'mdblistRatingSources': _csvToList(UserPreferences.enabledRatings),
       'homeRowOrder': _prefs.homeSectionsConfig
           .where((c) => c.enabled)
           .map((c) => c.type.serializedName)
           .toList(),
+      'jellyseerrRows': {
+        'rowOrder': _seerrPrefs.activeRows
+            .map((t) => t.serializedName)
+            .toList(),
+      },
     };
   }
 }

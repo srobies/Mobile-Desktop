@@ -360,6 +360,22 @@ class UserPreferences extends ChangeNotifier {
     key: 'mediaBarTrailerPreview',
     defaultValue: true,
   );
+
+  static final mediaBarLibraryIds = Preference(
+    key: 'mediaBarLibraryIds',
+    defaultValue: '',
+  );
+
+  static final mediaBarCollectionIds = Preference(
+    key: 'mediaBarCollectionIds',
+    defaultValue: '',
+  );
+
+  static final mediaBarExcludedGenres = Preference(
+    key: 'mediaBarExcludedGenres',
+    defaultValue: '',
+  );
+
   static final episodePreviewEnabled = Preference(
     key: 'episodePreviewEnabled',
     defaultValue: true,

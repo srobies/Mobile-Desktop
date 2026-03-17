@@ -58,22 +58,6 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
     HomeSectionType.none => 'None',
   };
 
-  IconData _iconFor(HomeSectionType type) => switch (type) {
-    HomeSectionType.mediaBar => Icons.featured_play_list,
-    HomeSectionType.latestMedia => Icons.new_releases,
-    HomeSectionType.recentlyReleased => Icons.schedule,
-    HomeSectionType.libraryTilesSmall => Icons.grid_view,
-    HomeSectionType.libraryButtons => Icons.apps,
-    HomeSectionType.resume => Icons.play_circle,
-    HomeSectionType.resumeAudio => Icons.headphones,
-    HomeSectionType.resumeBook => Icons.menu_book,
-    HomeSectionType.activeRecordings => Icons.fiber_manual_record,
-    HomeSectionType.nextUp => Icons.skip_next,
-    HomeSectionType.playlists => Icons.playlist_play,
-    HomeSectionType.liveTv => Icons.live_tv,
-    HomeSectionType.none => Icons.block,
-  };
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -102,17 +86,22 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
         },
         itemBuilder: (context, index) {
           final section = _sections[index];
-          return CheckboxListTile(
+          return ListTile(
             key: ValueKey(section.type),
-            secondary: Icon(_iconFor(section.type)),
+            leading: Checkbox(
+              value: section.enabled,
+              onChanged: (enabled) {
+                setState(() {
+                  _sections[index] = section.copyWith(enabled: enabled ?? false);
+                });
+                _save();
+              },
+            ),
             title: Text(_labelFor(section.type)),
-            value: section.enabled,
-            onChanged: (enabled) {
-              setState(() {
-                _sections[index] = section.copyWith(enabled: enabled ?? false);
-              });
-              _save();
-            },
+            trailing: ReorderableDragStartListener(
+              index: index,
+              child: const Icon(Icons.drag_handle),
+            ),
           );
         },
       ),

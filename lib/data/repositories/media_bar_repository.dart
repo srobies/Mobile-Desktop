@@ -25,25 +25,54 @@ class MediaBarRepository {
       final contentType = _prefs.get(UserPreferences.mediaBarContentType);
       final maxItems =
           int.tryParse(_prefs.get(UserPreferences.mediaBarItemCount)) ?? 10;
+      final libraryIds = _prefs
+          .get(UserPreferences.mediaBarLibraryIds)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final collectionIds = _prefs
+          .get(UserPreferences.mediaBarCollectionIds)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toList();
+      final excludedGenres = _prefs
+          .get(UserPreferences.mediaBarExcludedGenres)
+          .split(',')
+          .where((s) => s.isNotEmpty)
+          .toSet();
 
       final allItems = <Map<String, dynamic>>[];
+      final fetchLimit = maxItems * 3;
 
-      switch (contentType) {
-        case 'movies':
-          allItems.addAll(await _fetchItems('Movie', maxItems));
-        case 'tvshows':
-          allItems.addAll(await _fetchItems('Series', maxItems));
-        default:
-          final half = (maxItems / 2).ceil();
-          final results = await Future.wait([
-            _fetchItems('Movie', half),
-            _fetchItems('Series', half),
-          ]);
-          allItems.addAll(results.expand((r) => r));
+      final types = switch (contentType) {
+        'movies' => ['Movie'],
+        'tvshows' => ['Series'],
+        _ => ['Movie', 'Series'],
+      };
+
+      if (libraryIds.isEmpty) {
+        for (final type in types) {
+          allItems.addAll(await _fetchItems(type, fetchLimit));
+        }
+      } else {
+        for (final libraryId in libraryIds) {
+          for (final type in types) {
+            allItems.addAll(
+                await _fetchItems(type, fetchLimit, parentId: libraryId));
+          }
+        }
+      }
+
+      for (final collectionId in collectionIds) {
+        allItems
+            .addAll(await _fetchItems(null, fetchLimit, parentId: collectionId));
       }
 
       final withBackdrops = allItems
-          .where((item) => _hasBackdrop(item) && !_isBoxSet(item))
+          .where((item) =>
+              _hasBackdrop(item) &&
+              !_isBoxSet(item) &&
+              !_hasExcludedGenre(item, excludedGenres))
           .toList()
         ..shuffle();
       final selected = withBackdrops.take(maxItems).toList();
@@ -72,14 +101,16 @@ class MediaBarRepository {
   }
 
   Future<List<Map<String, dynamic>>> _fetchItems(
-    String itemType,
-    int limit,
-  ) async {
+    String? itemType,
+    int limit, {
+    String? parentId,
+  }) async {
     final response = await _client.itemsApi.getItems(
-      includeItemTypes: [itemType],
+      includeItemTypes: itemType != null ? [itemType] : null,
       sortBy: 'Random',
       sortOrder: 'Descending',
       recursive: true,
+      parentId: parentId,
       limit: limit,
       fields: _fields,
     );
@@ -94,6 +125,12 @@ class MediaBarRepository {
 
   bool _isBoxSet(Map<String, dynamic> item) {
     return item['Type'] == 'BoxSet';
+  }
+
+  bool _hasExcludedGenre(Map<String, dynamic> item, Set<String> excluded) {
+    if (excluded.isEmpty) return false;
+    final genres = (item['Genres'] as List?)?.cast<String>() ?? [];
+    return genres.any((g) => excluded.contains(g));
   }
 
   MediaBarSlideItem _toSlideItem(Map<String, dynamic> data) {
