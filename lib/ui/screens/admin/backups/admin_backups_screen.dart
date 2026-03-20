@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:server_core/server_core.dart';
@@ -27,6 +28,16 @@ class _AdminBackupsScreenState extends State<AdminBackupsScreen> {
     _loadBackups();
   }
 
+  String _friendlyError(Object error) {
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      if (status == 404 || status == 405 || status == 501) {
+        return 'Backups are not available on this server build.';
+      }
+    }
+    return error.toString();
+  }
+
   Future<void> _loadBackups() async {
     setState(() {
       _loading = true;
@@ -43,7 +54,7 @@ class _AdminBackupsScreenState extends State<AdminBackupsScreen> {
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _friendlyError(e);
         _loading = false;
       });
     }

@@ -15,8 +15,15 @@ class AdminDrawer extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final content = ListView(
-      padding: EdgeInsets.zero,
+    final mediaQuery = MediaQuery.of(context);
+    final bottomPadding = isEmbedded
+      ? mediaQuery.padding.bottom + 16
+      : mediaQuery.padding.bottom + 88;
+
+    final content = SafeArea(
+      bottom: true,
+      child: ListView(
+      padding: EdgeInsets.only(bottom: bottomPadding),
       children: [
         if (!isEmbedded) const SizedBox(height: 8),
         _section(context, 'Server'),
@@ -25,34 +32,35 @@ class AdminDrawer extends StatelessWidget {
         _tile(context, 'Branding', Icons.brush, Destinations.adminSettingsBranding),
         _tile(context, 'Users', Icons.people, Destinations.adminUsers),
         _tile(context, 'Libraries', Icons.video_library,
-            Destinations.adminLibraries),
+          Destinations.adminLibraries),
         _section(context, 'Playback'),
         _tile(context, 'Transcoding', Icons.swap_horiz,
-            Destinations.adminSettingsPlayback),
+          Destinations.adminSettingsPlayback),
         _tile(context, 'Resume', Icons.play_circle_outline,
-            Destinations.adminSettingsResume),
+          Destinations.adminSettingsResume),
         _tile(context, 'Streaming', Icons.stream,
-            Destinations.adminSettingsStreaming),
+          Destinations.adminSettingsStreaming),
         _tile(context, 'Trickplay', Icons.view_comfy,
-            Destinations.adminSettingsTrickplay),
+          Destinations.adminSettingsTrickplay),
         _section(context, 'Devices'),
         _tile(context, 'Devices', Icons.devices, Destinations.adminDevices),
         _tile(context, 'Activity', Icons.history, Destinations.adminActivity),
         _section(context, 'Advanced'),
         _tile(context, 'Networking', Icons.language,
-            Destinations.adminSettingsNetworking),
+          Destinations.adminSettingsNetworking),
         _tile(context, 'API Keys', Icons.vpn_key, Destinations.adminKeys),
         _tile(context, 'Backups', Icons.backup, Destinations.adminBackups),
         _tile(context, 'Logs', Icons.article, Destinations.adminLogs),
         _tile(context, 'Scheduled Tasks', Icons.schedule,
-            Destinations.adminTasks),
+          Destinations.adminTasks),
         _section(context, 'Plugins'),
         _tile(context, 'Plugins', Icons.extension, Destinations.adminPlugins),
         _tile(context, 'Repositories', Icons.source,
-            Destinations.adminRepositories),
+          Destinations.adminRepositories),
         _section(context, 'Live TV'),
         _tile(context, 'Live TV', Icons.live_tv, Destinations.adminLiveTv),
       ],
+      ),
     );
 
     if (isEmbedded) return content;

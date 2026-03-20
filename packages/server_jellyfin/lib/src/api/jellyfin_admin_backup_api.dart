@@ -9,6 +9,7 @@ class JellyfinAdminBackupApi implements AdminBackupApi {
   @override
   Future<List<Map<String, dynamic>>> getBackups() async {
     final response = await _getWithFallback([
+      '/Backup',
       '/System/Backups',
       '/Backups',
       '/Environment/Backups',
@@ -30,6 +31,7 @@ class JellyfinAdminBackupApi implements AdminBackupApi {
   @override
   Future<Map<String, dynamic>> createBackup() async {
     final response = await _postWithFallback([
+      '/Backup/Create',
       '/System/Backups',
       '/System/Backups/Create',
       '/Backups',
@@ -47,12 +49,12 @@ class JellyfinAdminBackupApi implements AdminBackupApi {
   Future<void> restoreBackup(String backupPath) async {
     await _postWithFallback(
       [
+        '/Backup/Restore',
         '/System/Backups/Restore',
         '/Backups/Restore',
         '/Environment/Backups/Restore',
       ],
-      queryParameters: {'path': backupPath},
-      data: {'Path': backupPath},
+      data: {'ArchiveFileName': backupPath},
     );
   }
 
@@ -60,6 +62,7 @@ class JellyfinAdminBackupApi implements AdminBackupApi {
   Future<Map<String, dynamic>> getBackupManifest(String backupPath) async {
     final response = await _getWithFallback(
       [
+        '/Backup/Manifest',
         '/System/Backups/Manifest',
         '/Backups/Manifest',
         '/Environment/Backups/Manifest',

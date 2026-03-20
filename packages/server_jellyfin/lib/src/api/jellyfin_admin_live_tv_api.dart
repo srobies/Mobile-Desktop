@@ -8,11 +8,12 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
 
   @override
   Future<List<Map<String, dynamic>>> getTunerHosts() async {
-    final response = await _getWithFallback([
-      '/LiveTv/TunerHosts',
-      '/LiveTv/Tuners',
-    ]);
-    return _asList(response.data);
+    final config = await getLiveTvConfiguration();
+    final hosts = config['TunerHosts'];
+    if (hosts is List) {
+      return hosts.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    }
+    return const [];
   }
 
   @override
@@ -26,10 +27,12 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
 
   @override
   Future<void> removeTunerHost(String id) async {
-    await _deleteWithFallback([
-      '/LiveTv/TunerHosts/$id',
-      '/LiveTv/Tuners/$id',
-    ]);
+    await _deleteWithFallback(
+      [
+        '/LiveTv/TunerHosts',
+      ],
+      queryParameters: {'id': id},
+    );
   }
 
   @override
@@ -52,11 +55,12 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
 
   @override
   Future<List<Map<String, dynamic>>> getListingProviders() async {
-    final response = await _getWithFallback([
-      '/LiveTv/ListingProviders',
-      '/LiveTv/Listings/Providers',
-    ]);
-    return _asList(response.data);
+    final config = await getLiveTvConfiguration();
+    final providers = config['ListingProviders'];
+    if (providers is List) {
+      return providers.whereType<Map>().map((e) => e.cast<String, dynamic>()).toList();
+    }
+    return const [];
   }
 
   @override
@@ -70,10 +74,12 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
 
   @override
   Future<void> removeListingProvider(String id) async {
-    await _deleteWithFallback([
-      '/LiveTv/ListingProviders/$id',
-      '/LiveTv/Listings/Providers/$id',
-    ]);
+    await _deleteWithFallback(
+      [
+        '/LiveTv/ListingProviders',
+      ],
+      queryParameters: {'id': id},
+    );
   }
 
   @override
@@ -87,8 +93,8 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
   @override
   Future<Map<String, dynamic>> getLiveTvConfiguration() async {
     final response = await _getWithFallback([
-      '/LiveTv/Configuration',
-      '/LiveTv/Config',
+      '/System/Configuration/livetv',
+      '/System/Configuration/LiveTv',
     ]);
     return _asMap(response.data);
   }
@@ -96,8 +102,8 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
   @override
   Future<void> updateLiveTvConfiguration(Map<String, dynamic> config) async {
     await _postWithFallback([
-      '/LiveTv/Configuration',
-      '/LiveTv/Config',
+      '/System/Configuration/livetv',
+      '/System/Configuration/LiveTv',
     ], data: config);
   }
 
@@ -156,11 +162,14 @@ class JellyfinAdminLiveTvApi implements AdminLiveTvApi {
     throw lastDioError ?? StateError('No live TV endpoint responded');
   }
 
-  Future<void> _deleteWithFallback(List<String> paths) async {
+  Future<void> _deleteWithFallback(
+    List<String> paths, {
+    Map<String, dynamic>? queryParameters,
+  }) async {
     DioException? lastDioError;
     for (final path in paths) {
       try {
-        await _dio.delete(path);
+        await _dio.delete(path, queryParameters: queryParameters);
         return;
       } on DioException catch (e) {
         final status = e.response?.statusCode;

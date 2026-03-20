@@ -1,5 +1,6 @@
 import 'dart:convert';
 
+import 'package:dio/dio.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:server_core/server_core.dart';
@@ -30,6 +31,16 @@ class _AdminLiveTvScreenState extends State<AdminLiveTvScreen> {
     _loadAll();
   }
 
+  String _friendlyError(Object error) {
+    if (error is DioException) {
+      final status = error.response?.statusCode;
+      if (status == 404 || status == 405 || status == 501) {
+        return 'Live TV administration is not available on this server build.';
+      }
+    }
+    return error.toString();
+  }
+
   Future<void> _loadAll() async {
     setState(() {
       _loading = true;
@@ -37,22 +48,26 @@ class _AdminLiveTvScreenState extends State<AdminLiveTvScreen> {
     });
 
     try {
-      final results = await Future.wait<dynamic>([
-        _api.getTunerHosts(),
-        _api.getListingProviders(),
-        _api.getLiveTvConfiguration(),
-      ]);
+      final config = await _api.getLiveTvConfiguration();
+      final tuners = (config['TunerHosts'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((item) => item.cast<String, dynamic>())
+          .toList();
+      final providers = (config['ListingProviders'] as List<dynamic>? ?? const [])
+          .whereType<Map>()
+          .map((item) => item.cast<String, dynamic>())
+          .toList();
       if (!mounted) return;
       setState(() {
-        _tuners = (results[0] as List<Map<String, dynamic>>);
-        _providers = (results[1] as List<Map<String, dynamic>>);
-        _config = (results[2] as Map<String, dynamic>);
+        _tuners = tuners;
+        _providers = providers;
+        _config = config;
         _loading = false;
       });
     } catch (e) {
       if (!mounted) return;
       setState(() {
-        _error = e.toString();
+        _error = _friendlyError(e);
         _loading = false;
       });
     }
@@ -76,12 +91,6 @@ class _AdminLiveTvScreenState extends State<AdminLiveTvScreen> {
     if (value is int) return value;
     if (value is num) return value.toInt();
     return int.tryParse(value?.toString() ?? '') ?? 0;
-  }
-
-  bool get _liveTvEnabled {
-    final value = _config['EnableLiveTv'] ?? _config['IsEnabled'] ?? _config['Enabled'];
-    if (value is bool) return value;
-    return true;
   }
 
   Future<void> _discoverTuners() async {
@@ -535,22 +544,6 @@ class _AdminLiveTvScreenState extends State<AdminLiveTvScreen> {
             FilledButton.tonal(
               onPressed: _loadAll,
               child: const Text('Retry'),
-            ),
-          ],
-        ),
-      );
-    }
-
-    if (!_liveTvEnabled) {
-      return Center(
-        child: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text('Live TV is disabled on this server.'),
-            const SizedBox(height: 8),
-            FilledButton.tonal(
-              onPressed: _loadAll,
-              child: const Text('Refresh'),
             ),
           ],
         ),
