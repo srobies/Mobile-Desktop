@@ -54,6 +54,10 @@ final connectivityServiceProvider =
     ChangeNotifierProvider<ConnectivityService>((_) => getIt<ConnectivityService>());
 
 final isOnlineProvider = Provider<bool>((ref) {
+  return ref.watch(connectivityServiceProvider).isOnline;
+});
+
+final activeServerReachableProvider = Provider<bool>((ref) {
   return ref.watch(connectivityServiceProvider).canReachServer;
 });
 

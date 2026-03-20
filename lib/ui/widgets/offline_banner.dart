@@ -11,7 +11,18 @@ class OfflineBanner extends ConsumerWidget {
   @override
   Widget build(BuildContext context, WidgetRef ref) {
     final isOnline = ref.watch(isOnlineProvider);
-    if (isOnline) return const SizedBox.shrink();
+    final serverReachable = ref.watch(activeServerReachableProvider);
+
+    if (isOnline && serverReachable) return const SizedBox.shrink();
+
+    final isServerUnavailable = isOnline && !serverReachable;
+    final bannerText = isServerUnavailable
+        ? 'Connected to the internet, but the current server is unavailable.'
+        : 'You are offline. Only downloaded content is available.';
+    final actionLabel = isServerUnavailable ? 'Switch Server' : 'Saved Media';
+    final action = isServerUnavailable
+        ? () => appRouter.go(Destinations.serverSelect)
+        : () => appRouter.go(Destinations.downloads);
 
     return SafeArea(
       bottom: false,
@@ -23,19 +34,19 @@ class OfflineBanner extends ConsumerWidget {
           children: [
             const Icon(Icons.cloud_off, color: Colors.white, size: 18),
             const SizedBox(width: 12),
-            const Expanded(
+            Expanded(
               child: Text(
-                'You are offline. Only downloaded content is available.',
-                style: TextStyle(color: Colors.white, fontSize: 13),
+                bannerText,
+                style: const TextStyle(color: Colors.white, fontSize: 13),
               ),
             ),
             TextButton(
-              onPressed: () => appRouter.go(Destinations.downloads),
+              onPressed: action,
               style: TextButton.styleFrom(
                 foregroundColor: Colors.white,
                 padding: const EdgeInsets.symmetric(horizontal: 12),
               ),
-              child: const Text('Saved Media'),
+              child: Text(actionLabel),
             ),
           ],
         ),
