@@ -114,6 +114,7 @@ class Destinations {
   static const downloads = '/downloads';
   static const downloadsSeries = '/downloads/series/:seriesId';
   static const downloadsSeason = '/downloads/series/:seriesId/season/:seasonId';
+  static const downloadsAlbum = '/downloads/music/:albumId';
   static const settingsDownloads = '/settings/downloads';
   static const storageManagement = '/settings/downloads/storage';
 
@@ -170,6 +171,14 @@ class Destinations {
       '/downloads/series/$seriesId';
   static String downloadedSeason(String seriesId, String seasonId) =>
       '/downloads/series/$seriesId/season/$seasonId';
+  static String downloadedAlbum(String albumId, {String? albumName}) {
+    final base = '/downloads/music/${Uri.encodeComponent(albumId)}';
+    if (albumName == null || albumName.isEmpty) {
+      return base;
+    }
+
+    return '$base?name=${Uri.encodeComponent(albumName)}';
+  }
 
   static String adminUser(String userId) => '/admin/users/$userId';
   static String adminLibrary(String libraryId) => '/admin/libraries/$libraryId';

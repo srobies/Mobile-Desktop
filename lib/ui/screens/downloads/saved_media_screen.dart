@@ -22,7 +22,7 @@ class SavedMediaScreen extends ConsumerStatefulWidget {
   ConsumerState<SavedMediaScreen> createState() => _SavedMediaScreenState();
 }
 
-enum _Filter { all, movies, tvShows }
+enum _Filter { all, movies, tvShows, music, books }
 
 class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
   _Filter _filter = _Filter.all;
@@ -31,6 +31,9 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
   Widget build(BuildContext context) {
     final movies = ref.watch(downloadedMoviesProvider);
     final series = ref.watch(downloadedSeriesProvider);
+    final audio = ref.watch(downloadedAudioProvider);
+    final audioBooks = ref.watch(downloadedAudioBooksProvider);
+    final books = ref.watch(downloadedBooksProvider);
     final storage = ref.watch(storageUsedProvider);
 
     return Scaffold(
@@ -40,7 +43,7 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
           children: [
             _buildHeader(storage),
             _buildFilterChips(),
-            Expanded(child: _buildContent(movies, series)),
+            Expanded(child: _buildContent(movies, series, audio, audioBooks, books)),
           ],
         ),
       ),
@@ -89,26 +92,29 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
   Widget _buildFilterChips() {
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 8),
-      child: Row(
-        children: _Filter.values.map((f) {
-          final selected = _filter == f;
-          return Padding(
-            padding: const EdgeInsets.only(right: 8),
-            child: FilterChip(
-              label: Text(_filterLabel(f)),
-              selected: selected,
-              onSelected: (_) => setState(() => _filter = f),
-              selectedColor: Colors.white.withValues(alpha: 0.2),
-              backgroundColor: Colors.white.withValues(alpha: 0.06),
-              labelStyle: TextStyle(
-                color: selected ? Colors.white : Colors.white70,
-                fontSize: 13,
+      child: SingleChildScrollView(
+        scrollDirection: Axis.horizontal,
+        child: Row(
+          children: _Filter.values.map((f) {
+            final selected = _filter == f;
+            return Padding(
+              padding: const EdgeInsets.only(right: 8),
+              child: FilterChip(
+                label: Text(_filterLabel(f)),
+                selected: selected,
+                onSelected: (_) => setState(() => _filter = f),
+                selectedColor: Colors.white.withValues(alpha: 0.2),
+                backgroundColor: Colors.white.withValues(alpha: 0.06),
+                labelStyle: TextStyle(
+                  color: selected ? Colors.white : Colors.white70,
+                  fontSize: 13,
+                ),
+                side: BorderSide.none,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
               ),
-              side: BorderSide.none,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
-            ),
-          );
-        }).toList(),
+            );
+          }).toList(),
+        ),
       ),
     );
   }
@@ -116,14 +122,37 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
   Widget _buildContent(
     AsyncValue<List<DownloadedItem>> movies,
     AsyncValue<List<DownloadedItem>> series,
+    AsyncValue<List<DownloadedItem>> audio,
+    AsyncValue<List<DownloadedItem>> audioBooks,
+    AsyncValue<List<DownloadedItem>> books,
   ) {
     final movieList = movies.valueOrNull ?? [];
     final seriesList = series.valueOrNull ?? [];
-    final showMovies = _filter != _Filter.tvShows;
-    final showSeries = _filter != _Filter.movies;
+    final audioList = audio.valueOrNull ?? [];
+    final audioBookList = audioBooks.valueOrNull ?? [];
+    final bookList = books.valueOrNull ?? [];
+    final musicAlbums = _groupMusicAlbums(audioList);
 
-    if (movieList.isEmpty && seriesList.isEmpty) {
-      return _buildEmptyState();
+    final showMovies = _filter == _Filter.all || _filter == _Filter.movies;
+    final showSeries = _filter == _Filter.all || _filter == _Filter.tvShows;
+    final showMusic = _filter == _Filter.all || _filter == _Filter.music;
+    final showBooks = _filter == _Filter.all || _filter == _Filter.books;
+
+    final hasAnything = movieList.isNotEmpty || seriesList.isNotEmpty ||
+        audioList.isNotEmpty || audioBookList.isNotEmpty || bookList.isNotEmpty;
+
+    if (!hasAnything) {
+      return _buildEmptyState(hasSavedMedia: false);
+    }
+
+    final hasVisibleItems =
+        (showMovies && movieList.isNotEmpty) ||
+        (showSeries && seriesList.isNotEmpty) ||
+        (showMusic && (musicAlbums.isNotEmpty || audioBookList.isNotEmpty)) ||
+        (showBooks && bookList.isNotEmpty);
+
+    if (!hasVisibleItems) {
+      return _buildEmptyState(hasSavedMedia: true);
     }
 
     return ListView(
@@ -131,19 +160,34 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
       children: [
         if (showMovies && movieList.isNotEmpty) ...[
           _sectionTitle('Movies'),
-          _buildGrid(movieList, isMovie: true),
+          _buildGrid(movieList, onTap: (item) => _playOffline(item)),
           const SizedBox(height: 24),
         ],
         if (showSeries && seriesList.isNotEmpty) ...[
           _sectionTitle('TV Shows'),
-          _buildGrid(seriesList, isMovie: false),
+          _buildGrid(seriesList, onTap: (item) => context.push(Destinations.downloadedSeries(item.itemId))),
+          const SizedBox(height: 24),
+        ],
+        if (showMusic && musicAlbums.isNotEmpty) ...[
+          _sectionTitle('Music Albums'),
+          _buildAlbumGrid(musicAlbums),
+          const SizedBox(height: 24),
+        ],
+        if (showMusic && audioBookList.isNotEmpty) ...[
+          _sectionTitle('Audiobooks'),
+          _buildGrid(audioBookList, onTap: (item) => _playOffline(item)),
+          const SizedBox(height: 24),
+        ],
+        if (showBooks && bookList.isNotEmpty) ...[
+          _sectionTitle('Books'),
+          _buildGrid(bookList, onTap: (item) => context.push(Destinations.book(item.itemId, serverId: item.serverId))),
           const SizedBox(height: 24),
         ],
       ],
     );
   }
 
-  Widget _buildEmptyState() {
+  Widget _buildEmptyState({required bool hasSavedMedia}) {
     final isOnline = ref.watch(isOnlineProvider);
     return Center(
       child: Column(
@@ -152,7 +196,7 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
           Icon(Icons.download_outlined, size: 64, color: Colors.white.withValues(alpha: 0.2)),
           const SizedBox(height: 16),
           Text(
-            'No downloaded media yet',
+            hasSavedMedia ? 'No media in this filter' : 'No downloaded media yet',
             style: TextStyle(color: Colors.white.withValues(alpha: 0.5), fontSize: 16),
           ),
           if (isOnline) ...[
@@ -182,7 +226,7 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
     );
   }
 
-  Widget _buildGrid(List<DownloadedItem> items, {required bool isMovie}) {
+  Widget _buildGrid(List<DownloadedItem> items, {required ValueChanged<DownloadedItem> onTap}) {
     return LayoutBuilder(builder: (context, constraints) {
       const cardWidth = 130.0;
       final crossAxisCount = (constraints.maxWidth / cardWidth).floor().clamp(2, 8);
@@ -201,18 +245,79 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
           final item = items[index];
           return _DownloadedCard(
             item: item,
-            onTap: () {
-              if (isMovie) {
-                _playOffline(item);
-              } else {
-                context.push(Destinations.downloadedSeries(item.itemId));
-              }
-            },
+            onTap: () => onTap(item),
             onLongPress: () => _showDeleteDialog(item),
           );
         },
       );
     });
+  }
+
+  Widget _buildAlbumGrid(List<_MusicAlbumGroup> albums) {
+    return LayoutBuilder(builder: (context, constraints) {
+      const cardWidth = 130.0;
+      final crossAxisCount = (constraints.maxWidth / cardWidth).floor().clamp(2, 8);
+
+      return GridView.builder(
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+          crossAxisCount: crossAxisCount,
+          childAspectRatio: 2 / 3.4,
+          crossAxisSpacing: 10,
+          mainAxisSpacing: 10,
+        ),
+        itemCount: albums.length,
+        itemBuilder: (context, index) {
+          final album = albums[index];
+          return _DownloadedCard(
+            item: album.representative,
+            title: album.albumName,
+            subtitle: '${album.trackCount} tracks',
+            onTap: () => context.push(
+              Destinations.downloadedAlbum(album.albumId, albumName: album.albumName),
+            ),
+          );
+        },
+      );
+    });
+  }
+
+  List<_MusicAlbumGroup> _groupMusicAlbums(List<DownloadedItem> tracks) {
+    final groups = <String, List<DownloadedItem>>{};
+
+    for (final track in tracks) {
+      final albumId = track.parsedMetadata['AlbumId'] as String? ?? 'track:${track.itemId}';
+      groups.putIfAbsent(albumId, () => []).add(track);
+    }
+
+    final albums = groups.entries.map((entry) {
+      final items = entry.value;
+      items.sort((a, b) {
+        final aDisc = a.parentIndexNumber ?? 0;
+        final bDisc = b.parentIndexNumber ?? 0;
+        if (aDisc != bDisc) return aDisc.compareTo(bDisc);
+
+        final aTrack = a.indexNumber ?? 0;
+        final bTrack = b.indexNumber ?? 0;
+        if (aTrack != bTrack) return aTrack.compareTo(bTrack);
+
+        return a.name.toLowerCase().compareTo(b.name.toLowerCase());
+      });
+
+      final first = items.first;
+      final albumName = (first.parsedMetadata['Album'] as String?)?.trim();
+
+      return _MusicAlbumGroup(
+        albumId: entry.key,
+        albumName: albumName == null || albumName.isEmpty ? first.name : albumName,
+        representative: first,
+        trackCount: items.length,
+      );
+    }).toList()
+      ..sort((a, b) => a.albumName.toLowerCase().compareTo(b.albumName.toLowerCase()));
+
+    return albums;
   }
 
   Future<void> _playOffline(DownloadedItem item) async {
@@ -257,11 +362,11 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
     }
 
     if (item.type == 'Series') {
-      await repo.deleteSeriesItems(item.itemId, item.serverId);
+      await repo.deleteSeriesItems(item.itemId);
     } else if (item.type == 'Season') {
-      await repo.deleteSeasonItems(item.itemId, item.serverId);
+      await repo.deleteSeasonItems(item.itemId);
     } else {
-      await repo.deleteItem(item.itemId, item.serverId);
+      await repo.deleteItem(item.itemId);
     }
   }
 
@@ -269,6 +374,8 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
         _Filter.all => 'All',
         _Filter.movies => 'Movies',
         _Filter.tvShows => 'TV Shows',
+        _Filter.music => 'Music',
+        _Filter.books => 'Books',
       };
 
   String _formatBytes(int bytes) {
@@ -281,13 +388,17 @@ class _SavedMediaScreenState extends ConsumerState<SavedMediaScreen> {
 
 class _DownloadedCard extends StatelessWidget {
   final DownloadedItem item;
+  final String? title;
   final VoidCallback onTap;
   final VoidCallback? onLongPress;
+  final String? subtitle;
 
   const _DownloadedCard({
     required this.item,
+    this.title,
     required this.onTap,
     this.onLongPress,
+    this.subtitle,
   });
 
   @override
@@ -311,13 +422,34 @@ class _DownloadedCard extends StatelessWidget {
           ),
           const SizedBox(height: 6),
           Text(
-            item.name,
+            title ?? item.name,
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
             style: const TextStyle(color: Colors.white, fontSize: 12),
           ),
+          if (subtitle != null)
+            Text(
+              subtitle!,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: Colors.white54, fontSize: 11),
+            ),
         ],
       ),
     );
   }
+}
+
+class _MusicAlbumGroup {
+  final String albumId;
+  final String albumName;
+  final DownloadedItem representative;
+  final int trackCount;
+
+  const _MusicAlbumGroup({
+    required this.albumId,
+    required this.albumName,
+    required this.representative,
+    required this.trackCount,
+  });
 }

@@ -1,6 +1,18 @@
+import 'dart:convert';
+
 import 'package:drift/drift.dart';
 
 part 'offline_database.g.dart';
+
+extension DownloadedItemMetadata on DownloadedItem {
+  Map<String, dynamic> get parsedMetadata {
+    try {
+      final raw = jsonDecode(metadataJson);
+      if (raw is Map<String, dynamic>) return raw;
+    } catch (_) {}
+    return const {};
+  }
+}
 
 class DownloadedItems extends Table {
   TextColumn get itemId => text()();

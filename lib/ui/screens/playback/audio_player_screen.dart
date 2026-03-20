@@ -1,4 +1,6 @@
 import 'dart:async';
+import 'dart:convert';
+import 'dart:io';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
@@ -89,15 +91,50 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     super.dispose();
   }
 
+  AggregatedItem? _resolveCurrentItem() {
+    final currentItem = _queue.currentItem;
+    if (currentItem is AggregatedItem) return currentItem;
+    final meta = _manager.currentOfflineMetadata;
+    if (meta == null) return null;
+    final id = meta['Id'] as String? ?? '';
+    final serverId = meta['ServerId'] as String? ?? '';
+    return AggregatedItem(id: id, serverId: serverId, rawData: meta);
+  }
+
+  String? _offlinePosterPath() {
+    final meta = _manager.currentOfflineMetadata;
+    return meta?['_localPosterPath'] as String?;
+  }
+
   Future<void> _loadLyricsIfNeeded() async {
-    final item = _queue.currentItem;
-    if (item is! AggregatedItem) return;
-    if (item.id == _lyricsItemId) return;
-    _lyricsItemId = item.id;
+    final resolved = _resolveCurrentItem();
+    if (resolved == null) return;
+    if (resolved.id == _lyricsItemId) return;
+    _lyricsItemId = resolved.id;
+
+    final meta = _manager.currentOfflineMetadata;
+    final lyricsPath = meta?['_localLyricsPath'] as String?;
+    if (lyricsPath != null) {
+      try {
+        final file = File(lyricsPath);
+        if (await file.exists()) {
+          final data = jsonDecode(await file.readAsString()) as Map<String, dynamic>;
+          if (mounted && _lyricsItemId == resolved.id) {
+            setState(() => _lyrics = LyricsData.fromJson(data));
+          }
+          return;
+        }
+      } catch (_) {}
+    }
+
+    if (_manager.isOfflinePlayback) {
+      if (mounted) setState(() => _lyrics = LyricsData.empty);
+      return;
+    }
     try {
-      final client = _clientForItem(item);
-      final data = await client.itemsApi.getLyrics(item.id);
-      if (mounted && _lyricsItemId == item.id) {
+      final client = _clientForItem(resolved);
+      final data = await client.itemsApi.getLyrics(resolved.id);
+      if (mounted && _lyricsItemId == resolved.id) {
         setState(() => _lyrics = LyricsData.fromJson(data));
       }
     } catch (_) {
@@ -133,16 +170,28 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final currentItem = _queue.currentItem;
-    final item = currentItem is AggregatedItem ? currentItem : null;
-    final artUrl = item != null ? _getArtUrl(item) : null;
+    final item = _resolveCurrentItem();
+    final localPoster = _offlinePosterPath();
+    final artUrl = item != null && !_manager.isOfflinePlayback ? _getArtUrl(item) : null;
 
     return Scaffold(
       backgroundColor: AppColorScheme.background,
       body: Stack(
         fit: StackFit.expand,
         children: [
-          if (artUrl != null)
+          if (localPoster != null && File(localPoster).existsSync())
+            Positioned.fill(
+              child: ImageFiltered(
+                imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
+                child: Image.file(
+                  File(localPoster),
+                  fit: BoxFit.cover,
+                  color: Colors.black54,
+                  colorBlendMode: BlendMode.darken,
+                ),
+              ),
+            )
+          else if (artUrl != null)
             Positioned.fill(
               child: ImageFiltered(
                 imageFilter: ImageFilter.blur(sigmaX: 60, sigmaY: 60),
@@ -167,7 +216,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                               positionStream: _state.positionStream,
                               position: _state.position,
                             )
-                          : _buildNowPlaying(item, artUrl),
+                          : _buildNowPlaying(item, artUrl, localPoster: localPoster),
                 ),
                 if (item != null && !_showQueue && !_showLyrics)
                   _buildFavoriteRow(item),
@@ -223,7 +272,7 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
     );
   }
 
-  Widget _buildNowPlaying(AggregatedItem? item, String? artUrl) {
+  Widget _buildNowPlaying(AggregatedItem? item, String? artUrl, {String? localPoster}) {
     return LayoutBuilder(
       builder: (context, constraints) {
         final maxArtByWidth = (constraints.maxWidth - (AppSpacing.space2xl * 2))
@@ -254,14 +303,20 @@ class _AudioPlayerScreenState extends State<AudioPlayerScreen> {
                       ],
                     ),
                     clipBehavior: Clip.antiAlias,
-                    child: artUrl != null
-                        ? CachedNetworkImage(
-                            imageUrl: artUrl,
+                    child: localPoster != null && File(localPoster).existsSync()
+                        ? Image.file(
+                            File(localPoster),
                             fit: BoxFit.cover,
-                            placeholder: (_, __) => _artPlaceholder(),
-                            errorWidget: (_, __, ___) => _artPlaceholder(),
+                            errorBuilder: (_, __, ___) => _artPlaceholder(),
                           )
-                        : _artPlaceholder(),
+                        : artUrl != null
+                            ? CachedNetworkImage(
+                                imageUrl: artUrl,
+                                fit: BoxFit.cover,
+                                placeholder: (_, __) => _artPlaceholder(),
+                                errorWidget: (_, __, ___) => _artPlaceholder(),
+                              )
+                            : _artPlaceholder(),
                   ),
                 ),
                 const SizedBox(height: AppSpacing.spaceXl),

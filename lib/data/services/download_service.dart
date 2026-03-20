@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 
@@ -87,8 +88,7 @@ class DownloadService extends ChangeNotifier {
   Future<bool> _checkStorageLimit(int estimatedBytes) async {
     final limitMb = _prefs.get(UserPreferences.downloadStorageLimitMb);
     if (limitMb <= 0) return true;
-    final serverId = _client.baseUrl;
-    final used = await _offlineRepo.getTotalStorageUsed(serverId);
+    final used = await _offlineRepo.getTotalStorageUsed();
     return (used + estimatedBytes) <= limitMb * 1024 * 1024;
   }
 
@@ -183,17 +183,17 @@ class DownloadService extends ChangeNotifier {
 
   Future<void> _cleanupEpisodeContainers(AggregatedItem episode, Directory imageDir) async {
     if (episode.seasonId != null) {
-      final seasonEpisodes = await _offlineRepo.getSeasonEpisodes(episode.seasonId!, episode.serverId);
+      final seasonEpisodes = await _offlineRepo.getSeasonEpisodes(episode.seasonId!);
       if (seasonEpisodes.isEmpty) {
-        await _offlineRepo.deleteItem(episode.seasonId!, episode.serverId);
+        await _offlineRepo.deleteItem(episode.seasonId!);
         await _deleteItemImages(episode.seasonId!, imageDir);
       }
     }
 
     if (episode.seriesId != null) {
-      final seriesEpisodes = await _offlineRepo.getSeriesEpisodes(episode.seriesId!, episode.serverId);
+      final seriesEpisodes = await _offlineRepo.getSeriesEpisodes(episode.seriesId!);
       if (seriesEpisodes.isEmpty) {
-        await _offlineRepo.deleteItem(episode.seriesId!, episode.serverId);
+        await _offlineRepo.deleteItem(episode.seriesId!);
         await _deleteItemImages(episode.seriesId!, imageDir);
       }
     }
@@ -231,7 +231,7 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<Set<String>> _relatedImageIds(AggregatedItem item) async {
-    final allItems = await _offlineRepo.getItems(item.serverId);
+    final allItems = await _offlineRepo.getItems();
 
     switch (item.type) {
       case 'Season':
@@ -349,6 +349,82 @@ class DownloadService extends ChangeNotifier {
     return 'mkv';
   }
 
+  Future<String?> _correctBookExtension(
+    File savedFile,
+    Response? response,
+  ) async {
+    final currentPath = savedFile.path;
+    final currentExt = currentPath.contains('.')
+        ? currentPath.substring(currentPath.lastIndexOf('.') + 1).toLowerCase()
+        : '';
+
+    String? detectedExt;
+
+    if (response != null) {
+      final disposition = response.headers.value('content-disposition');
+      detectedExt = BookReaderService.extractExtensionFromContentDisposition(disposition);
+
+      if (detectedExt == null) {
+        final contentType = response.headers.value('content-type');
+        detectedExt = BookReaderService.extensionFromMime(contentType);
+      }
+    }
+
+    if (detectedExt == null || detectedExt == currentExt) return null;
+    if (!BookReaderService.supportedExtensions.contains(detectedExt)) return null;
+
+    final newPath = currentPath.contains('.')
+        ? currentPath.replaceAll(RegExp(r'\.[^.]+$'), '.$detectedExt')
+        : '$currentPath.$detectedExt';
+    if (newPath == currentPath) return null;
+    await savedFile.rename(newPath);
+    return newPath;
+  }
+
+  Future<void> _populateOfflineAssets(AggregatedItem item) async {
+    await _downloadImages(item);
+    if (_usesAudioDownloadEndpoint(item)) {
+      await _downloadLyrics(item);
+    }
+    await _ensureParentContainers(item);
+  }
+
+  /// Wraps [Dio.download] so that once all expected bytes have been received
+  /// the future resolves after a short grace period, even if the HTTP
+  /// connection hangs open (common behind reverse proxies / keep-alive).
+  Future<Response?> _downloadWithHangGuard(
+    String url,
+    String savePath, {
+    required Options options,
+    required CancelToken cancelToken,
+    required void Function(int, int) onReceiveProgress,
+  }) async {
+    final bytesComplete = Completer<void>();
+
+    final downloadFuture = _downloadDio.download(
+      url,
+      savePath,
+      options: options,
+      cancelToken: cancelToken,
+      deleteOnError: false,
+      onReceiveProgress: (received, total) {
+        onReceiveProgress(received, total);
+        if (total > 0 && received >= total && !bytesComplete.isCompleted) {
+          bytesComplete.complete();
+        }
+      },
+    );
+
+    return Future.any<Response?>([
+      downloadFuture.then<Response?>((r) => r),
+      bytesComplete.future
+          .then((_) => Future<Response?>.delayed(
+                const Duration(seconds: 5),
+                () => null,
+              )),
+    ]);
+  }
+
   bool _supportsTranscodedDownload(String? type) {
     return type == 'Movie' || type == 'Episode';
   }
@@ -370,54 +446,102 @@ class DownloadService extends ChangeNotifier {
     return item.type == 'Audio' || item.type == 'AudioBook' || mediaType == 'Audio';
   }
 
-  bool _shouldRetryBookDownload(AggregatedItem item, DioException error) {
-    if (item.type != 'Book') {
+  bool _shouldRetryWithFallback(
+    AggregatedItem item,
+    DownloadQuality quality,
+    DioException error,
+  ) {
+    final status = error.response?.statusCode;
+    if (status != 401 && status != 403 && status != 404) {
       return false;
     }
 
-    final status = error.response?.statusCode;
-    return status == 401 || status == 403 || status == 404;
-  }
-
-  List<String> _buildBookFallbackUrls(
-    AggregatedItem item, {
-    required String primaryUrl,
-  }) {
-    final primary = Uri.parse(primaryUrl).toString();
-    final urls = <String>[];
-    for (final uri in BookReaderService.buildDownloadUris(_client, item)) {
-      final value = uri.toString();
-      if (value != primary && !urls.contains(value)) {
-        urls.add(value);
-      }
+    if (item.type == 'Book') {
+      return true;
     }
-    return urls;
+
+    return !quality.isTranscoded;
   }
 
-  String _buildAudioDownloadUrl(String itemId, AggregatedItem item) {
-    final mediaSourceId =
-        item.mediaSources.isNotEmpty ? item.mediaSources.first['Id'] as String? : null;
-    final params = <String, String>{
-      'Static': 'true',
+  String? _primaryMediaSourceId(AggregatedItem item) {
+    return item.mediaSources.isNotEmpty ? item.mediaSources.first['Id'] as String? : null;
+  }
+
+  String _encodeQuery(Map<String, String> params) {
+    return params.entries
+        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
+        .join('&');
+  }
+
+  Map<String, String> _baseDownloadParams(AggregatedItem item, {bool isStatic = false}) {
+    final mediaSourceId = _primaryMediaSourceId(item);
+    return <String, String>{
+      if (isStatic) 'Static': 'true',
       if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
       if (_client.accessToken != null) 'api_key': _client.accessToken!,
     };
-    final query = params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
+  }
+
+  String _buildDirectItemFileUrl(String itemId, AggregatedItem item) {
+    final query = _encodeQuery(_baseDownloadParams(item));
+    return '${_client.baseUrl}/Items/$itemId/File${query.isEmpty ? '' : '?$query'}';
+  }
+
+  String _buildStaticVideoStreamUrl(String itemId, AggregatedItem item) {
+    final query = _encodeQuery(_baseDownloadParams(item, isStatic: true));
+    return '${_client.baseUrl}/Videos/$itemId/stream?$query';
+  }
+
+  List<String> _buildDownloadFallbackUrls(
+    AggregatedItem item,
+    {
+    required String primaryUrl,
+  }) {
+    final candidates = <String>[
+      if (item.type == 'Book')
+        ...BookReaderService.buildDownloadUris(_client, item).map((u) => u.toString())
+      else ...[
+        if (_usesAudioDownloadEndpoint(item)) _buildAudioDownloadUrl(item.id, item),
+        _buildDirectItemDownloadUrl(item.id, item),
+        _buildDirectItemFileUrl(item.id, item),
+        _buildStaticVideoStreamUrl(item.id, item),
+      ],
+    ];
+
+    final fallbackUrls = <String>[];
+    final primary = Uri.parse(primaryUrl).toString();
+    final seen = <String>{primary};
+    for (final candidate in candidates) {
+      final normalized = Uri.parse(candidate).toString();
+      if (seen.add(normalized)) {
+        fallbackUrls.add(normalized);
+      }
+    }
+
+    return fallbackUrls;
+  }
+
+  String _friendlyDioError(DioException e) {
+    final status = e.response?.statusCode;
+    if (status == 403) {
+      return 'Download forbidden (403). Retried alternate endpoints but access was denied.';
+    }
+    if (status == 401) {
+      return 'Download unauthorized (401). Please re-login and try again.';
+    }
+    if (status == 404) {
+      return 'Download source not found (404). The file may no longer be available.';
+    }
+    return e.message ?? 'Download failed';
+  }
+
+  String _buildAudioDownloadUrl(String itemId, AggregatedItem item) {
+    final query = _encodeQuery(_baseDownloadParams(item, isStatic: true));
     return '${_client.baseUrl}/Audio/$itemId/stream?$query';
   }
 
   String _buildDirectItemDownloadUrl(String itemId, AggregatedItem item) {
-    final mediaSourceId =
-        item.mediaSources.isNotEmpty ? item.mediaSources.first['Id'] as String? : null;
-    final params = <String, String>{
-      if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
-      if (_client.accessToken != null) 'api_key': _client.accessToken!,
-    };
-    final query = params.entries
-        .map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}')
-        .join('&');
+    final query = _encodeQuery(_baseDownloadParams(item));
     return '${_client.baseUrl}/Items/$itemId/Download${query.isEmpty ? '' : '?$query'}';
   }
 
@@ -431,12 +555,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     final baseUrl = _client.baseUrl;
-    final mediaSourceId =
-        item.mediaSources.isNotEmpty ? item.mediaSources.first['Id'] as String? : null;
-    final params = <String, String>{
-      if (mediaSourceId != null) 'MediaSourceId': mediaSourceId,
-      if (_client.accessToken != null) 'api_key': _client.accessToken!,
-    };
+    final params = _baseDownloadParams(item);
 
     params['Static'] = 'false';
     params['videoCodec'] = quality.videoCodec;
@@ -455,7 +574,7 @@ class DownloadService extends ChangeNotifier {
       params['audioChannels'] = quality.audioChannels.toString();
     }
 
-    final query = params.entries.map((e) => '${Uri.encodeComponent(e.key)}=${Uri.encodeComponent(e.value)}').join('&');
+    final query = _encodeQuery(params);
     return '$baseUrl/Videos/$itemId/stream?$query';
   }
 
@@ -517,9 +636,6 @@ class DownloadService extends ChangeNotifier {
         parentIndexNumber: Value(item.parentIndexNumber),
       ));
 
-      _downloadImages(fullItem);
-      _ensureParentContainers(fullItem);
-
       final cancelToken = CancelToken();
       _cancelTokens[item.id] = cancelToken;
 
@@ -556,7 +672,6 @@ class DownloadService extends ChangeNotifier {
         );
         _offlineRepo.updateDownloadStatus(
           item.id,
-          item.serverId,
           1,
           progress: _storedProgress(progress),
         );
@@ -569,30 +684,32 @@ class DownloadService extends ChangeNotifier {
         notifyListeners();
       }
 
+      Response? downloadResponse;
       try {
-        await _downloadDio.download(
+        downloadResponse = await _downloadWithHangGuard(
           url,
           savePath,
           options: requestOptions,
           cancelToken: cancelToken,
-          deleteOnError: false,
           onReceiveProgress: onReceiveProgress,
         );
       } on DioException catch (e) {
-        if (!_shouldRetryBookDownload(fullItem, e)) {
+        if (!_shouldRetryWithFallback(fullItem, quality, e)) {
           rethrow;
         }
 
         var retrySucceeded = false;
-        final fallbackUrls = _buildBookFallbackUrls(fullItem, primaryUrl: url);
+        final fallbackUrls = _buildDownloadFallbackUrls(
+          fullItem,
+          primaryUrl: url,
+        );
         for (final fallbackUrl in fallbackUrls) {
           try {
-            await _downloadDio.download(
+            downloadResponse = await _downloadWithHangGuard(
               fallbackUrl,
               savePath,
               options: requestOptions,
               cancelToken: cancelToken,
-              deleteOnError: false,
               onReceiveProgress: onReceiveProgress,
             );
             retrySucceeded = true;
@@ -607,9 +724,26 @@ class DownloadService extends ChangeNotifier {
         }
       }
 
-      final fileSize = await File(savePath).length();
-      await _offlineRepo.setLocalFilePath(item.id, item.serverId, savePath, fileSize: fileSize);
-      await _offlineRepo.updateDownloadStatus(item.id, item.serverId, 2);
+      final savedFile = File(savePath);
+      final fileSize = await savedFile.length();
+
+      if (fileSize == 0) {
+        throw StateError('Downloaded file is empty (0 bytes)');
+      }
+
+      if (fullItem.type == 'Book') {
+        final corrected = await _correctBookExtension(
+          savedFile, downloadResponse,
+        );
+        if (corrected != null) {
+          savePath = corrected;
+        }
+      }
+
+      final finalSize = await File(savePath).length();
+      await _offlineRepo.setLocalFilePath(item.id, savePath, fileSize: finalSize);
+      await _offlineRepo.updateDownloadStatus(item.id, 2);
+      await _populateOfflineAssets(fullItem);
 
       if (Platform.isIOS) {
         await IosStorage.excludeFromBackup(savePath);
@@ -640,28 +774,35 @@ class DownloadService extends ChangeNotifier {
           await _deleteFileArtifacts(savePath);
         }
         await _deleteItemImages(item.id, imageDir);
-        await _offlineRepo.deleteItem(item.id, item.serverId);
+        await _offlineRepo.deleteItem(item.id);
         await _cleanupEpisodeContainers(item, imageDir);
         await _notificationService.dismiss();
       } else {
+        final friendlyError = _friendlyDioError(e);
+        if (savePath != null) {
+          await _deleteFileArtifacts(savePath);
+        }
         _activeDownloads[item.id] = DownloadProgress(
           itemId: item.id,
           fileName: item.name,
-          error: e.message ?? 'Download failed',
+          error: friendlyError,
         );
-        await _offlineRepo.updateDownloadStatus(item.id, item.serverId, 3, error: e.message);
+        await _offlineRepo.updateDownloadStatus(item.id, 3, error: friendlyError);
         await _notificationService.showError(
           itemName: item.name,
-          error: e.message ?? 'Download failed',
+          error: friendlyError,
         );
       }
     } catch (e) {
+      if (savePath != null) {
+        await _deleteFileArtifacts(savePath);
+      }
       _activeDownloads[item.id] = DownloadProgress(
         itemId: item.id,
         fileName: item.name,
         error: e.toString(),
       );
-      await _offlineRepo.updateDownloadStatus(item.id, item.serverId, 3, error: e.toString());
+      await _offlineRepo.updateDownloadStatus(item.id, 3, error: e.toString());
       await _notificationService.showError(
         itemName: item.name,
         error: e.toString(),
@@ -753,13 +894,13 @@ class DownloadService extends ChangeNotifier {
         case 'Movie':
           if (await targetDir.exists()) await targetDir.delete(recursive: true);
           await _deleteItemImages(item.id, imageDir);
-          await _offlineRepo.deleteItem(item.id, item.serverId);
+          await _offlineRepo.deleteItem(item.id);
           return true;
 
         case 'Episode':
           await _deleteCandidateFileArtifacts(targetDir, item, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
-          await _offlineRepo.deleteItem(item.id, item.serverId);
+          await _offlineRepo.deleteItem(item.id);
           await _cleanupEpisodeContainers(item, imageDir);
           return true;
 
@@ -768,7 +909,7 @@ class DownloadService extends ChangeNotifier {
         case 'Book':
           await _deleteCandidateFileArtifacts(targetDir, item, downloadsDir);
           await _deleteItemImages(item.id, imageDir);
-          await _offlineRepo.deleteItem(item.id, item.serverId);
+          await _offlineRepo.deleteItem(item.id);
           return true;
 
         case 'Season':
@@ -782,7 +923,7 @@ class DownloadService extends ChangeNotifier {
             }
           }
           await _deleteImagesForIds(seasonImageIds, imageDir);
-          await _offlineRepo.deleteSeasonItems(item.id, item.serverId);
+          await _offlineRepo.deleteSeasonItems(item.id);
           return true;
 
         case 'Series':
@@ -791,14 +932,14 @@ class DownloadService extends ChangeNotifier {
           final seriesDir = Directory('${downloadsDir.path}/TV/$seriesName');
           if (await seriesDir.exists()) await seriesDir.delete(recursive: true);
           await _deleteImagesForIds(seriesImageIds, imageDir);
-          await _offlineRepo.deleteSeriesItems(item.id, item.serverId);
+          await _offlineRepo.deleteSeriesItems(item.id);
           return true;
 
         default:
           final defaultDir = Directory('${downloadsDir.path}/Other/${_sanitizePath(item.name)}');
           if (await defaultDir.exists()) await defaultDir.delete(recursive: true);
           await _deleteItemImages(item.id, imageDir);
-          await _offlineRepo.deleteItem(item.id, item.serverId);
+          await _offlineRepo.deleteItem(item.id);
           return true;
       }
     } catch (_) {
@@ -812,7 +953,19 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<bool> hasDownloadedFiles(AggregatedItem item) async {
-    return _offlineRepo.isAvailableOffline(item.id, item.serverId);
+    return _offlineRepo.isAvailableOffline(item.id);
+  }
+
+  Future<void> _downloadLyrics(AggregatedItem item) async {
+    try {
+      final data = await _client.itemsApi.getLyrics(item.id);
+      final lyrics = data['Lyrics'] as List?;
+      if (lyrics == null || lyrics.isEmpty) return;
+      final imageDir = await _storagePath.getImageCacheDir();
+      final itemDir = Directory('${imageDir.path}/${item.id}');
+      if (!await itemDir.exists()) await itemDir.create(recursive: true);
+      await File('${itemDir.path}/lyrics.json').writeAsString(jsonEncode(data));
+    } catch (_) {}
   }
 
   Future<void> _downloadImages(AggregatedItem item) async {
@@ -868,7 +1021,6 @@ class DownloadService extends ChangeNotifier {
 
       await _offlineRepo.setImagePaths(
         item.id,
-        item.serverId,
         poster: posterPath,
         backdrop: backdropPath,
         logo: logoPath,
@@ -880,7 +1032,7 @@ class DownloadService extends ChangeNotifier {
     if (episode.type != 'Episode') return;
 
     if (episode.seriesId != null) {
-      final existing = await _offlineRepo.getItem(episode.seriesId!, episode.serverId);
+      final existing = await _offlineRepo.getItem(episode.seriesId!);
       if (existing == null) {
         try {
           final seriesData = await _client.itemsApi.getItem(episode.seriesId!);
@@ -900,7 +1052,7 @@ class DownloadService extends ChangeNotifier {
     }
 
     if (episode.seasonId != null) {
-      final existing = await _offlineRepo.getItem(episode.seasonId!, episode.serverId);
+      final existing = await _offlineRepo.getItem(episode.seasonId!);
       if (existing == null) {
         try {
           final seasonData = await _client.itemsApi.getItem(episode.seasonId!);
@@ -957,22 +1109,20 @@ class DownloadService extends ChangeNotifier {
   }
 
   Future<void> clearAllDownloads() async {
-    final serverId = _client.baseUrl;
-    final allItems = await _offlineRepo.getItems(serverId);
+    final allItems = await _offlineRepo.getItems();
     for (final item in allItems) {
       if (item.localFilePath != null) {
         final f = File(item.localFilePath!);
         if (await f.exists()) await f.delete();
       }
-      await _offlineRepo.deleteItem(item.itemId, item.serverId);
+      await _offlineRepo.deleteItem(item.itemId);
     }
     final imageDir = await _storagePath.getImageCacheDir();
     if (await imageDir.exists()) await imageDir.delete(recursive: true);
   }
 
   Future<void> recoverIncompleteDownloads() async {
-    final serverId = _client.baseUrl;
-    final allItems = await _offlineRepo.getItems(serverId);
+    final allItems = await _offlineRepo.getItems();
 
     for (final item in allItems) {
       if (item.downloadStatus == 1) {
@@ -988,22 +1138,22 @@ class DownloadService extends ChangeNotifier {
           );
           final isStatic = !quality.isTranscoded;
           if (isStatic) {
-            await _offlineRepo.updateDownloadStatus(item.itemId, serverId, 0);
+            await _offlineRepo.updateDownloadStatus(item.itemId, 0);
           } else {
             await _offlineRepo.updateDownloadStatus(
-              item.itemId, serverId, 3,
+              item.itemId, 3,
               error: 'Interrupted. Transcoded downloads cannot be resumed.',
             );
           }
         } else {
-          await _offlineRepo.updateDownloadStatus(item.itemId, serverId, 3, error: 'Interrupted');
+          await _offlineRepo.updateDownloadStatus(item.itemId, 3, error: 'Interrupted');
         }
       } else if (item.downloadStatus == 2) {
         if (item.localFilePath != null) {
           final file = File(item.localFilePath!);
           if (!await file.exists()) {
             await _offlineRepo.updateDownloadStatus(
-              item.itemId, serverId, 3,
+              item.itemId, 3,
               error: 'File missing from disk',
             );
           }

@@ -8,6 +8,7 @@ import 'package:playback_core/playback_core.dart';
 
 import '../data/database/offline_database.dart';
 import '../data/services/offline_playback_tracker.dart';
+import '../data/services/storage_path_service.dart';
 import '../ui/navigation/destinations.dart';
 import 'offline_stream_resolver.dart';
 
@@ -17,7 +18,7 @@ Future<void> launchOfflinePlayback(
   List<DownloadedItem>? episodeQueue,
 }) async {
   final resolver = GetIt.instance<OfflineStreamResolver>();
-  final result = await resolver.resolve(item.itemId, item.serverId);
+  final result = await resolver.resolve(item.itemId);
   if (result == null) {
     if (context.mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -45,6 +46,10 @@ Future<void> launchOfflinePlayback(
       type == 'AudioBook' ||
       type == 'MusicAlbum';
 
+  if (isAudio) {
+    await _injectLocalPaths(item, metadata);
+  }
+
   var queueUrls = const <String>[];
   var startIndex = 0;
   final metadataByUrl = <String, Map<String, dynamic>>{
@@ -60,7 +65,11 @@ Future<void> launchOfflinePlayback(
     for (final ep in episodeQueue) {
       if (ep.localFilePath != null && ep.downloadStatus == 2) {
         final url = File(ep.localFilePath!).uri.toString();
-        metadataByUrl[url] = jsonDecode(ep.metadataJson) as Map<String, dynamic>;
+        final epMeta = jsonDecode(ep.metadataJson) as Map<String, dynamic>;
+        if (isAudio) {
+          await _injectLocalPaths(ep, epMeta);
+        }
+        metadataByUrl[url] = epMeta;
       }
     }
   }
@@ -81,7 +90,7 @@ Future<void> launchOfflinePlayback(
         (e) => e.localFilePath != null && File(e.localFilePath!).uri.toString() == url,
         orElse: () => item,
       );
-      final nextResult = await resolver.resolve(nextEp.itemId, nextEp.serverId);
+      final nextResult = await resolver.resolve(nextEp.itemId);
       if (nextResult != null) {
         await manager.playOffline(
           nextResult.url,
@@ -96,7 +105,6 @@ Future<void> launchOfflinePlayback(
         }
         tracker.startTracking(
           itemId: nextResult.itemId,
-          serverId: nextResult.serverId,
           duration: nextResult.duration,
           positionStream: backend.positionStream,
         );
@@ -109,7 +117,6 @@ Future<void> launchOfflinePlayback(
   }
   tracker.startTracking(
     itemId: result.itemId,
-    serverId: result.serverId,
     duration: result.duration,
     positionStream: backend.positionStream,
   );
@@ -117,4 +124,18 @@ Future<void> launchOfflinePlayback(
   if (context.mounted) {
     context.push(isAudio ? Destinations.audioPlayer : Destinations.videoPlayer);
   }
+}
+
+Future<void> _injectLocalPaths(DownloadedItem item, Map<String, dynamic> meta) async {
+  if (item.posterPath != null) {
+    meta['_localPosterPath'] = item.posterPath;
+  }
+  try {
+    final storagePath = GetIt.instance<StoragePathService>();
+    final imageDir = await storagePath.getImageCacheDir();
+    final lyricsFile = File('${imageDir.path}/${item.itemId}/lyrics.json');
+    if (await lyricsFile.exists()) {
+      meta['_localLyricsPath'] = lyricsFile.path;
+    }
+  } catch (_) {}
 }

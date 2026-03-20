@@ -34,16 +34,19 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
 
   Future<void> _loadBreakdown() async {
     final repo = GetIt.instance<OfflineRepository>();
-    final serverId = activeServerId();
-    final allItems = await repo.getItems(serverId);
+    final allItems = await repo.getItems();
 
-    int movieBytes = 0, tvBytes = 0, imageBytes = 0;
+    int movieBytes = 0, tvBytes = 0, musicBytes = 0, bookBytes = 0, imageBytes = 0;
     for (final item in allItems) {
       final size = item.fileSizeBytes;
       if (item.type == 'Movie') {
         movieBytes += size;
       } else if (item.type == 'Episode') {
         tvBytes += size;
+      } else if (item.type == 'Audio' || item.type == 'AudioBook') {
+        musicBytes += size;
+      } else if (item.type == 'Book') {
+        bookBytes += size;
       }
     }
 
@@ -60,8 +63,9 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     final dbFile = await storagePath.getDatabaseFile();
     final dbBytes = await dbFile.exists() ? await dbFile.length() : 0;
 
+    const downloadableTypes = {'Movie', 'Episode', 'Audio', 'AudioBook', 'Book'};
     final downloadable = allItems
-        .where((i) => i.fileSizeBytes > 0 && (i.type == 'Movie' || i.type == 'Episode'))
+        .where((i) => i.fileSizeBytes > 0 && downloadableTypes.contains(i.type))
         .toList()
       ..sort((a, b) => b.fileSizeBytes.compareTo(a.fileSizeBytes));
 
@@ -70,6 +74,8 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
         _breakdown = [
           _StorageBreakdownItem('Movies', movieBytes, const Color(0xFF00A4DC)),
           _StorageBreakdownItem('TV Shows', tvBytes, const Color(0xFF4CAF50)),
+          _StorageBreakdownItem('Music & Audiobooks', musicBytes, const Color(0xFFAB47BC)),
+          _StorageBreakdownItem('Books', bookBytes, const Color(0xFFEF5350)),
           _StorageBreakdownItem('Images', imageBytes, const Color(0xFFFFA726)),
           _StorageBreakdownItem('Database', dbBytes, const Color(0xFF9E9E9E)),
         ];
@@ -186,7 +192,14 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
                       isSelected ? _selected.remove(item.itemId) : _selected.add(item.itemId);
                     }),
                   )
-                : const Icon(Icons.movie_outlined, color: Colors.white38),
+                : Icon(
+                    switch (item.type) {
+                      'Audio' || 'AudioBook' => Icons.music_note_outlined,
+                      'Book' => Icons.menu_book_outlined,
+                      _ => Icons.movie_outlined,
+                    },
+                    color: Colors.white38,
+                  ),
             title: Text(item.name, style: const TextStyle(color: Colors.white), maxLines: 1, overflow: TextOverflow.ellipsis),
             subtitle: Text(
               '${item.type} • ${item.qualityPreset}',
@@ -260,10 +273,9 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
     final repo = GetIt.instance<OfflineRepository>();
     final storagePath = GetIt.instance<StoragePathService>();
     final imageDir = await storagePath.getImageCacheDir();
-    final serverId = activeServerId();
 
     for (final itemId in _selected) {
-      final item = await repo.getItem(itemId, serverId);
+      final item = await repo.getItem(itemId);
       if (item == null) continue;
       if (item.localFilePath != null) {
         final f = File(item.localFilePath!);
@@ -271,7 +283,7 @@ class _StorageManagementScreenState extends ConsumerState<StorageManagementScree
       }
       final imgDir = Directory('${imageDir.path}/$itemId');
       if (await imgDir.exists()) await imgDir.delete(recursive: true);
-      await repo.deleteItem(itemId, serverId);
+      await repo.deleteItem(itemId);
     }
 
     setState(() {

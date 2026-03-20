@@ -85,6 +85,7 @@ import '../screens/admin/plugins/admin_plugin_detail_screen.dart';
 import '../screens/admin/plugins/admin_repositories_screen.dart';
 import '../screens/admin/devices/admin_devices_screen.dart';
 import '../screens/downloads/saved_media_screen.dart';
+import '../screens/downloads/saved_album_screen.dart';
 import '../screens/downloads/saved_season_screen.dart';
 import '../screens/downloads/saved_series_screen.dart';
 import '../screens/downloads/storage_management_screen.dart';
@@ -605,6 +606,13 @@ final appRouter = GoRouter(
       path: Destinations.downloads,
       builder: (context, state) => const SavedMediaScreen(),
       routes: [
+        GoRoute(
+          path: 'music/:albumId',
+          builder: (context, state) => SavedAlbumScreen(
+            albumId: state.pathParameters['albumId']!,
+            albumName: state.uri.queryParameters['name'],
+          ),
+        ),
         GoRoute(
           path: 'series/:seriesId',
           builder: (context, state) => SavedSeriesScreen(

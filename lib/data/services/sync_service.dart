@@ -33,7 +33,7 @@ class SyncService extends ChangeNotifier {
 
     _setState(SyncState.syncing);
 
-    final unsynced = await _offlineRepo.getUnsyncedProgress(client.baseUrl);
+    final unsynced = await _offlineRepo.getUnsyncedProgress();
     if (unsynced.isEmpty) {
       _setState(SyncState.done);
       _scheduleDoneReset();
@@ -54,7 +54,7 @@ class SyncService extends ChangeNotifier {
           );
           await client.playbackApi.reportPlaybackStopped(report.toJson());
         }
-        await _offlineRepo.markProgressSynced(item.itemId, item.serverId);
+        await _offlineRepo.markProgressSynced(item.itemId);
         synced++;
       } catch (_) {
         failed++;
@@ -67,7 +67,7 @@ class SyncService extends ChangeNotifier {
   }
 
   Future<void> refreshMetadata(MediaServerClient client) async {
-    final items = await _offlineRepo.getItems(client.baseUrl);
+    final items = await _offlineRepo.getItems();
     for (final item in items.where((i) => i.downloadStatus == 2)) {
       try {
         final serverData = await client.itemsApi.getItem(item.itemId);

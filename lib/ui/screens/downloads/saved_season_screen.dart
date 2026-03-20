@@ -116,7 +116,7 @@ class SavedSeasonScreen extends ConsumerWidget {
     final itemImageDir = Directory('${imageDir.path}/${episode.itemId}');
     if (await itemImageDir.exists()) await itemImageDir.delete(recursive: true);
 
-    await repo.deleteItem(episode.itemId, episode.serverId);
+    await repo.deleteItem(episode.itemId);
   }
 }
 

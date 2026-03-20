@@ -40,15 +40,15 @@ class OfflineStreamResolver {
 
   OfflineStreamResolver(this._offlineRepo);
 
-  Future<OfflineStreamResult?> resolve(String itemId, String serverId) async {
-    final item = await _offlineRepo.getItem(itemId, serverId);
+  Future<OfflineStreamResult?> resolve(String itemId) async {
+    final item = await _offlineRepo.getItem(itemId);
     if (item == null || item.downloadStatus != 2 || item.localFilePath == null) {
       return null;
     }
 
     final file = File(item.localFilePath!);
     if (!await file.exists()) {
-      await _offlineRepo.updateDownloadStatus(itemId, serverId, 3, error: 'File not found');
+      await _offlineRepo.updateDownloadStatus(itemId, 3, error: 'File not found');
       return null;
     }
 
@@ -86,7 +86,7 @@ class OfflineStreamResolver {
       url: file.uri.toString(),
       mediaStreams: mediaStreams,
       itemId: itemId,
-      serverId: serverId,
+      serverId: item.serverId,
       duration: duration,
       externalSubtitles: externalSubs,
     );

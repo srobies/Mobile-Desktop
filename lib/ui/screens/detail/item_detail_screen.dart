@@ -993,8 +993,7 @@ class _HeaderSection extends StatelessWidget {
 
 class _DownloadedBadge extends StatefulWidget {
   final String itemId;
-  final String serverId;
-  const _DownloadedBadge({required this.itemId, required this.serverId});
+  const _DownloadedBadge({required this.itemId});
 
   @override
   State<_DownloadedBadge> createState() => _DownloadedBadgeState();
@@ -1026,7 +1025,6 @@ class _DownloadedBadgeState extends State<_DownloadedBadge> {
     final repo = GetIt.instance<OfflineRepository>();
     final available = await repo.isAvailableOffline(
       widget.itemId,
-      widget.serverId,
     );
     if (mounted && available != _downloaded) {
       setState(() => _downloaded = available);
@@ -1151,7 +1149,7 @@ class _PosterImage extends StatelessWidget {
                 ),
               ),
             ),
-          _DownloadedBadge(itemId: item.id, serverId: item.serverId),
+          _DownloadedBadge(itemId: item.id),
         ],
       ),
     );
@@ -1479,8 +1477,8 @@ class _ActionButtonsState extends State<_ActionButtons> {
     if (type == 'Season' || type == 'Series') {
       final episodes =
           type == 'Season'
-              ? await repo.getSeasonEpisodes(item.id, item.serverId)
-              : await repo.getSeriesEpisodes(item.id, item.serverId);
+              ? await repo.getSeasonEpisodes(item.id)
+              : await repo.getSeriesEpisodes(item.id);
       final playable =
           episodes
               .where((e) => e.downloadStatus == 2 && e.localFilePath != null)
@@ -1492,7 +1490,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         });
       }
     } else {
-      final row = await repo.getItem(item.id, item.serverId);
+      final row = await repo.getItem(item.id);
       if (mounted) {
         setState(() {
           _offlineRow = (row != null && row.downloadStatus == 2) ? row : null;
@@ -3528,7 +3526,7 @@ class _AlbumActions extends StatelessWidget {
     }
 
     return StreamBuilder<List<DownloadedItem>>(
-      stream: offlineRepo.watchItems(item.serverId),
+      stream: offlineRepo.watchItems(),
       builder: (context, snapshot) {
         final hasDownloadedTracks =
             snapshot.data?.any(
@@ -3802,7 +3800,7 @@ class _TrackTile extends StatelessWidget {
                     final artistText = track.artists.isNotEmpty
                         ? track.artists.join(', ')
                         : track.albumArtist ?? '';
-                    if (artistText.isNotEmpty)
+                    if (artistText.isNotEmpty) {
                       return Text(
                         artistText,
                         style: theme.textTheme.bodySmall?.copyWith(
@@ -3811,6 +3809,7 @@ class _TrackTile extends StatelessWidget {
                         maxLines: 1,
                         overflow: TextOverflow.ellipsis,
                       );
+                    }
                     return const SizedBox.shrink();
                   }(),
                 ],

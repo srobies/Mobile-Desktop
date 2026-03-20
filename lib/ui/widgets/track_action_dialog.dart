@@ -72,7 +72,7 @@ class TrackActionDialog extends StatelessWidget {
     final offlineRepo = GetIt.instance<OfflineRepository>();
 
     return StreamBuilder(
-      stream: offlineRepo.watchItem(track.id, track.serverId),
+      stream: offlineRepo.watchItem(track.id),
       builder: (context, snapshot) => ListenableBuilder(
         listenable: downloadService,
         builder: (context, _) {

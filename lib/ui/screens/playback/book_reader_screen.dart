@@ -253,7 +253,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
     try {
       final offlineRepo = GetIt.instance<OfflineRepository>();
-      final offlineItem = await offlineRepo.getItem(item.id, item.serverId);
+      final offlineItem = await offlineRepo.getItem(item.id);
       final localFilePath =
           offlineItem?.downloadStatus == 2 ? offlineItem?.localFilePath : null;
 
@@ -523,6 +523,16 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       HttpException? lastError;
 
       for (final uri in uris) {
+        if (uri.scheme == 'file') {
+          final file = File.fromUri(uri);
+          if (await file.exists()) {
+            return uri;
+          }
+
+          lastError = HttpException('Missing local file for reader: $uri');
+          continue;
+        }
+
         var request = await client.openUrl('HEAD', uri);
         headers.forEach(request.headers.add);
         var response = await request.close();

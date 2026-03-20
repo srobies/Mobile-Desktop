@@ -233,7 +233,6 @@ class SavedSeriesScreen extends ConsumerWidget {
     final repo = GetIt.instance<OfflineRepository>();
     final storagePath = GetIt.instance<StoragePathService>();
     final imageDir = await storagePath.getImageCacheDir();
-    final serverId = episodes.first.serverId;
 
     for (final ep in episodes) {
       if (ep.localFilePath != null) {
@@ -243,7 +242,7 @@ class SavedSeriesScreen extends ConsumerWidget {
       final imgDir = Directory('${imageDir.path}/${ep.itemId}');
       if (await imgDir.exists()) await imgDir.delete(recursive: true);
     }
-    await repo.deleteSeasonItems(seasonId, serverId);
+    await repo.deleteSeasonItems(seasonId);
     ref.invalidate(downloadedEpisodesProvider(seriesId));
   }
 }

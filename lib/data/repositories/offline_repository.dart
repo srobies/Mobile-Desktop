@@ -15,13 +15,12 @@ class OfflineRepository {
 
   Future<void> updateDownloadStatus(
     String itemId,
-    String serverId,
     int status, {
     double? progress,
     String? error,
   }) async {
     await (_db.update(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .write(DownloadedItemsCompanion(
       downloadStatus: Value(status),
       downloadProgress: progress != null ? Value(progress) : const Value.absent(),
@@ -30,9 +29,9 @@ class OfflineRepository {
     ));
   }
 
-  Future<void> setLocalFilePath(String itemId, String serverId, String path, {int? fileSize}) async {
+  Future<void> setLocalFilePath(String itemId, String path, {int? fileSize}) async {
     await (_db.update(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .write(DownloadedItemsCompanion(
       localFilePath: Value(path),
       fileSizeBytes: fileSize != null ? Value(fileSize) : const Value.absent(),
@@ -40,15 +39,14 @@ class OfflineRepository {
   }
 
   Future<void> setImagePaths(
-    String itemId,
-    String serverId, {
+    String itemId, {
     String? poster,
     String? backdrop,
     String? logo,
     String? thumb,
   }) async {
     await (_db.update(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .write(DownloadedItemsCompanion(
       posterPath: poster != null ? Value(poster) : const Value.absent(),
       backdropPath: backdrop != null ? Value(backdrop) : const Value.absent(),
@@ -57,73 +55,75 @@ class OfflineRepository {
     ));
   }
 
-  Future<void> updatePlaybackPosition(String itemId, String serverId, int positionTicks) async {
+  Future<void> updatePlaybackPosition(String itemId, int positionTicks) async {
     await (_db.update(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .write(DownloadedItemsCompanion(
       playbackPositionTicks: Value(positionTicks),
       progressSynced: const Value(false),
     ));
   }
 
-  Future<void> markProgressSynced(String itemId, String serverId) async {
+  Future<void> markProgressSynced(String itemId) async {
     await (_db.update(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .write(const DownloadedItemsCompanion(progressSynced: Value(true)));
   }
 
-  Future<void> deleteItem(String itemId, String serverId) async {
+  Future<void> deleteItem(String itemId) async {
     await (_db.delete(_db.downloadedItems)
-          ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId)))
+          ..where((t) => t.itemId.equals(itemId)))
         .go();
   }
 
-  Future<void> deleteSeriesItems(String seriesId, String serverId) async {
-    await (_db.delete(_db.downloadedItems)
-          ..where((t) =>
-              t.serverId.equals(serverId) &
-              (t.itemId.equals(seriesId) | t.seriesId.equals(seriesId))))
-        .go();
-  }
-
-  Future<void> deleteSeasonItems(String seasonId, String serverId) async {
+  Future<void> deleteSeriesItems(String seriesId) async {
     await (_db.delete(_db.downloadedItems)
           ..where((t) =>
-              t.serverId.equals(serverId) &
-              (t.itemId.equals(seasonId) | t.seasonId.equals(seasonId))))
+              t.itemId.equals(seriesId) | t.seriesId.equals(seriesId)))
         .go();
   }
 
-  Future<List<DownloadedItem>> getItems(String serverId, {String? type}) async {
-    final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.serverId.equals(serverId));
+  Future<void> deleteSeasonItems(String seasonId) async {
+    await (_db.delete(_db.downloadedItems)
+          ..where((t) =>
+              t.itemId.equals(seasonId) | t.seasonId.equals(seasonId)))
+        .go();
+  }
+
+  Future<List<DownloadedItem>> getItems({
+    String? type,
+    bool onlyCompleted = false,
+  }) async {
+    final query = _db.select(_db.downloadedItems);
     if (type != null) {
       query.where((t) => t.type.equals(type));
+    }
+    if (onlyCompleted) {
+      query.where((t) => t.downloadStatus.equals(2));
     }
     return query.get();
   }
 
-  Future<DownloadedItem?> getItem(String itemId, String serverId) async {
+  Future<DownloadedItem?> getItem(String itemId) async {
     final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId));
+      ..where((t) => t.itemId.equals(itemId));
     return query.getSingleOrNull();
   }
 
-  Future<bool> isAvailableOffline(String itemId, String serverId) async {
-    final item = await getItem(itemId, serverId);
+  Future<bool> isAvailableOffline(String itemId) async {
+    final item = await getItem(itemId);
     return item != null && item.downloadStatus == 2;
   }
 
-  Future<List<DownloadedItem>> getUnsyncedProgress(String serverId) async {
+  Future<List<DownloadedItem>> getUnsyncedProgress() async {
     final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.serverId.equals(serverId) & t.progressSynced.equals(false));
+      ..where((t) => t.progressSynced.equals(false));
     return query.get();
   }
 
-  Future<List<DownloadedItem>> getSeriesEpisodes(String seriesId, String serverId) async {
+  Future<List<DownloadedItem>> getSeriesEpisodes(String seriesId) async {
     final query = _db.select(_db.downloadedItems)
       ..where((t) =>
-          t.serverId.equals(serverId) &
           t.seriesId.equals(seriesId) &
           t.type.equals('Episode'))
       ..orderBy([
@@ -133,41 +133,38 @@ class OfflineRepository {
     return query.get();
   }
 
-  Future<List<DownloadedItem>> getSeasonEpisodes(String seasonId, String serverId) async {
+  Future<List<DownloadedItem>> getSeasonEpisodes(String seasonId) async {
     final query = _db.select(_db.downloadedItems)
       ..where((t) =>
-          t.serverId.equals(serverId) &
           t.seasonId.equals(seasonId) &
           t.type.equals('Episode'))
       ..orderBy([(t) => OrderingTerm.asc(t.indexNumber)]);
     return query.get();
   }
 
-  Future<List<DownloadedItem>> getDownloadedSeries(String serverId) async {
+  Future<List<DownloadedItem>> getDownloadedSeries() async {
     final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.serverId.equals(serverId) & t.type.equals('Series'));
+      ..where((t) => t.type.equals('Series'));
     return query.get();
   }
 
-  Future<List<DownloadedItem>> getDownloadedMovies(String serverId) async {
+  Future<List<DownloadedItem>> getDownloadedMovies() async {
     final query = _db.select(_db.downloadedItems)
       ..where((t) =>
-          t.serverId.equals(serverId) &
           t.type.equals('Movie') &
           t.downloadStatus.equals(2));
     return query.get();
   }
 
-  Future<int> getTotalStorageUsed(String serverId) async {
+  Future<int> getTotalStorageUsed() async {
     final result = await _db.customSelect(
-      'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM downloaded_items WHERE server_id = ?',
-      variables: [Variable.withString(serverId)],
+      'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM downloaded_items',
     ).getSingle();
     return result.read<int>('total');
   }
 
-  Future<Map<String, int>> getCountsByType(String serverId) async {
-    final items = await getItems(serverId);
+  Future<Map<String, int>> getCountsByType() async {
+    final items = await getItems();
     final counts = <String, int>{};
     for (final item in items) {
       counts[item.type] = (counts[item.type] ?? 0) + 1;
@@ -175,42 +172,45 @@ class OfflineRepository {
     return counts;
   }
 
-  Stream<List<DownloadedItem>> watchItems(String serverId, {String? type}) {
-    final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.serverId.equals(serverId));
+  Stream<List<DownloadedItem>> watchItems({
+    String? type,
+    bool onlyCompleted = false,
+  }) {
+    final query = _db.select(_db.downloadedItems);
     if (type != null) {
       query.where((t) => t.type.equals(type));
+    }
+    if (onlyCompleted) {
+      query.where((t) => t.downloadStatus.equals(2));
     }
     return query.watch();
   }
 
-  Stream<DownloadedItem?> watchItem(String itemId, String serverId) {
+  Stream<DownloadedItem?> watchItem(String itemId) {
     final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.itemId.equals(itemId) & t.serverId.equals(serverId));
+      ..where((t) => t.itemId.equals(itemId));
     return query.watchSingleOrNull();
   }
 
-  Stream<int> watchTotalStorageUsed(String serverId) {
+  Stream<int> watchTotalStorageUsed() {
     return _db
         .customSelect(
-          'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM downloaded_items WHERE server_id = ?',
-          variables: [Variable.withString(serverId)],
+          'SELECT COALESCE(SUM(file_size_bytes), 0) AS total FROM downloaded_items',
           readsFrom: {_db.downloadedItems},
         )
         .watch()
         .map((rows) => rows.first.read<int>('total'));
   }
 
-  Stream<List<DownloadedItem>> watchDownloadedSeries(String serverId) {
+  Stream<List<DownloadedItem>> watchDownloadedSeries() {
     final query = _db.select(_db.downloadedItems)
-      ..where((t) => t.serverId.equals(serverId) & t.type.equals('Series'));
+      ..where((t) => t.type.equals('Series'));
     return query.watch();
   }
 
-  Stream<List<DownloadedItem>> watchSeriesEpisodes(String seriesId, String serverId) {
+  Stream<List<DownloadedItem>> watchSeriesEpisodes(String seriesId) {
     final query = _db.select(_db.downloadedItems)
       ..where((t) =>
-          t.serverId.equals(serverId) &
           t.seriesId.equals(seriesId) &
           t.type.equals('Episode'))
       ..orderBy([
@@ -220,10 +220,9 @@ class OfflineRepository {
     return query.watch();
   }
 
-  Stream<List<DownloadedItem>> watchSeasonEpisodes(String seasonId, String serverId) {
+  Stream<List<DownloadedItem>> watchSeasonEpisodes(String seasonId) {
     final query = _db.select(_db.downloadedItems)
       ..where((t) =>
-          t.serverId.equals(serverId) &
           t.seasonId.equals(seasonId) &
           t.type.equals('Episode'))
       ..orderBy([(t) => OrderingTerm.asc(t.indexNumber)]);

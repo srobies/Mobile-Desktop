@@ -16,6 +16,16 @@ class BookDocumentService {
       HttpException? lastError;
 
       for (final uri in uris) {
+        if (uri.scheme == 'file') {
+          final file = File.fromUri(uri);
+          if (await file.exists()) {
+            return await file.readAsBytes();
+          }
+
+          lastError = HttpException('Missing local file for book data: $uri');
+          continue;
+        }
+
         final request = await client.getUrl(uri);
         headers.forEach(request.headers.add);
         final response = await request.close();
@@ -41,6 +51,16 @@ class BookDocumentService {
     final client = HttpClient();
     try {
       for (final uri in uris) {
+        if (uri.scheme == 'file') {
+          final fromUri = BookReaderService.extractExtensionFromFileName(
+            uri.pathSegments.isEmpty ? uri.path : uri.pathSegments.last,
+          );
+          if (BookReaderService.isSupportedExtension(fromUri)) {
+            return fromUri;
+          }
+          continue;
+        }
+
         final request = await client.getUrl(uri);
         headers.forEach(request.headers.add);
         request.headers.set(HttpHeaders.rangeHeader, 'bytes=0-0');
