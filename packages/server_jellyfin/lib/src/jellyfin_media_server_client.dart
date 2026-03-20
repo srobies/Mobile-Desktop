@@ -22,6 +22,7 @@ import 'api/jellyfin_admin_plugins_api.dart';
 import 'api/jellyfin_admin_devices_api.dart';
 import 'api/jellyfin_admin_api_keys_api.dart';
 import 'api/jellyfin_admin_backup_api.dart';
+import 'api/jellyfin_admin_live_tv_api.dart';
 
 class JellyfinMediaServerClient extends MediaServerClient {
   final Dio _dio;
@@ -147,6 +148,9 @@ class JellyfinMediaServerClient extends MediaServerClient {
 
   @override
   late final AdminBackupApi adminBackupApi = JellyfinAdminBackupApi(_dio);
+
+  @override
+  late final AdminLiveTvApi adminLiveTvApi = JellyfinAdminLiveTvApi(_dio);
 
   @override
   void dispose() {

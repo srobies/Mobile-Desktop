@@ -50,6 +50,8 @@ class AdminDrawer extends StatelessWidget {
         _tile(context, 'Plugins', Icons.extension, Destinations.adminPlugins),
         _tile(context, 'Repositories', Icons.source,
             Destinations.adminRepositories),
+        _section(context, 'Live TV'),
+        _tile(context, 'Live TV', Icons.live_tv, Destinations.adminLiveTv),
       ],
     );
 

@@ -88,6 +88,7 @@ import '../screens/admin/keys/admin_api_keys_screen.dart';
 import '../screens/admin/backups/admin_backups_screen.dart';
 import '../screens/admin/logs/admin_logs_screen.dart';
 import '../screens/admin/logs/admin_log_viewer_screen.dart';
+import '../screens/admin/livetv/admin_live_tv_screen.dart';
 import '../screens/downloads/saved_media_screen.dart';
 import '../screens/downloads/saved_album_screen.dart';
 import '../screens/downloads/saved_season_screen.dart';
@@ -480,7 +481,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminLiveTv,
-          builder: (context, state) => const _AdminPlaceholder(title: 'Live TV Settings'),
+          builder: (context, state) => const AdminLiveTvScreen(),
         ),
       ],
     ),
@@ -634,16 +635,4 @@ final appRouter = GoRouter(
       ],
     ),
   ],
-);
-
-class _AdminPlaceholder extends StatelessWidget {
-  final String title;
-  const _AdminPlaceholder({required this.title});
-
-  @override
-  Widget build(BuildContext context) {
-    return Center(
-      child: Text(title, style: Theme.of(context).textTheme.headlineSmall),
-    );
-  }
-}
+  );
