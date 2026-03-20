@@ -154,6 +154,10 @@ class EmbyMediaServerClient extends MediaServerClient {
       throw UnsupportedError('Admin not supported on Emby yet');
 
   @override
+  AdminBackupApi get adminBackupApi =>
+      throw UnsupportedError('Admin not supported on Emby yet');
+
+  @override
   void dispose() {
     _dio.close();
   }

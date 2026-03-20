@@ -85,6 +85,7 @@ import '../screens/admin/plugins/admin_plugin_detail_screen.dart';
 import '../screens/admin/plugins/admin_repositories_screen.dart';
 import '../screens/admin/devices/admin_devices_screen.dart';
 import '../screens/admin/keys/admin_api_keys_screen.dart';
+import '../screens/admin/backups/admin_backups_screen.dart';
 import '../screens/admin/logs/admin_logs_screen.dart';
 import '../screens/admin/logs/admin_log_viewer_screen.dart';
 import '../screens/downloads/saved_media_screen.dart';
@@ -465,7 +466,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminBackups,
-          builder: (context, state) => const _AdminPlaceholder(title: 'Backups'),
+          builder: (context, state) => const AdminBackupsScreen(),
         ),
         GoRoute(
           path: Destinations.adminLogs,
