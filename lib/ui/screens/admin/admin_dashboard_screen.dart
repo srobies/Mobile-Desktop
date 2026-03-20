@@ -19,7 +19,6 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
   late final MediaServerClient _client;
   Map<String, dynamic>? _systemInfo;
   StorageInfo? _storageInfo;
-  List<Map<String, dynamic>>? _sessions;
   ActivityLogResult? _activityLog;
   String? _error;
   bool _loading = true;
@@ -40,15 +39,13 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
       final results = await Future.wait([
         _client.systemApi.getSystemInfo(),
         _client.adminSystemApi.getStorageInfo(),
-        _client.sessionApi.getSessions(),
         _client.adminSystemApi.getActivityLog(limit: 10),
       ]);
       if (!mounted) return;
       setState(() {
         _systemInfo = results[0] as Map<String, dynamic>;
         _storageInfo = results[1] as StorageInfo;
-        _sessions = results[2] as List<Map<String, dynamic>>;
-        _activityLog = results[3] as ActivityLogResult;
+        _activityLog = results[2] as ActivityLogResult;
         _loading = false;
       });
     } catch (e) {
@@ -96,7 +93,7 @@ class _AdminDashboardScreenState extends State<AdminDashboardScreen> {
             onActionComplete: _loadData,
           ),
           const SizedBox(height: 16),
-          ActiveSessionsCard(sessions: _sessions!),
+          const ActiveSessionsCard(),
           const SizedBox(height: 16),
           ActivityLogCard(activityLog: _activityLog!),
           const SizedBox(height: 16),

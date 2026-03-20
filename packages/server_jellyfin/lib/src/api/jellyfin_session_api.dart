@@ -18,10 +18,48 @@ class JellyfinSessionApi implements SessionApi {
   }
 
   @override
-  Future<void> sendCommand(
+  Future<void> sendPlayStateCommand(
     String sessionId,
-    Map<String, dynamic> command,
-  ) async {
-    await _dio.post('/Sessions/$sessionId/Command', data: command);
+    String command, {
+    int? seekPositionTicks,
+  }) async {
+    await _dio.post(
+      '/Sessions/$sessionId/Playing/$command',
+      queryParameters: {
+        if (seekPositionTicks != null) 'seekPositionTicks': seekPositionTicks,
+      },
+    );
+  }
+
+  @override
+  Future<void> sendMessage(
+    String sessionId,
+    String text, {
+    String? header,
+    int? timeoutMs,
+  }) async {
+    await _dio.post(
+      '/Sessions/$sessionId/Message',
+      data: {
+        'Text': text,
+        if (header != null) 'Header': header,
+        if (timeoutMs != null) 'TimeoutMs': timeoutMs,
+      },
+    );
+  }
+
+  @override
+  Future<void> sendGeneralCommand(
+    String sessionId,
+    String commandName, {
+    Map<String, String>? arguments,
+  }) async {
+    await _dio.post(
+      '/Sessions/$sessionId/Command',
+      data: {
+        'Name': commandName,
+        if (arguments != null) 'Arguments': arguments,
+      },
+    );
   }
 }
