@@ -3798,15 +3798,21 @@ class _TrackTile extends StatelessWidget {
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
                   ),
-                  if (track.artists.isNotEmpty)
-                    Text(
-                      track.artists.join(', '),
-                      style: theme.textTheme.bodySmall?.copyWith(
-                        color: Colors.white.withValues(alpha: 0.6),
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                  () {
+                    final artistText = track.artists.isNotEmpty
+                        ? track.artists.join(', ')
+                        : track.albumArtist ?? '';
+                    if (artistText.isNotEmpty)
+                      return Text(
+                        artistText,
+                        style: theme.textTheme.bodySmall?.copyWith(
+                          color: Colors.white.withValues(alpha: 0.6),
+                        ),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                      );
+                    return const SizedBox.shrink();
+                  }(),
                 ],
               ),
             ),
