@@ -12,6 +12,7 @@ import 'package:rar/rar.dart';
 import 'package:server_core/server_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:pdfrx/pdfrx.dart';
+import 'package:flutter_widget_from_html_core/flutter_widget_from_html_core.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:webview_flutter/webview_flutter.dart';
 
@@ -83,6 +84,14 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     return PlatformDetection.isAndroid ||
         PlatformDetection.isIOS ||
         PlatformDetection.isMacOS;
+  }
+
+  bool get _supportsInAppEpub {
+    if (_supportsEmbeddedWebView) {
+      return true;
+    }
+
+    return !kIsWeb && PlatformDetection.isLinux;
   }
 
   bool get _supportsRarExtraction {
@@ -315,7 +324,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
           _pdfPageCount = 0;
         });
       } else if (ext == 'epub') {
-        if (!_supportsEmbeddedWebView) {
+        if (!_supportsInAppEpub) {
           if (!mounted) {
             return;
           }
@@ -425,6 +434,21 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     final bytes = await BookDocumentService.downloadBytes(uris, headers);
     final chapterHtml = BookDocumentService.extractEpubChapterHtml(bytes);
 
+    if (!_supportsEmbeddedWebView && !kIsWeb && PlatformDetection.isLinux) {
+      if (!mounted) {
+        return;
+      }
+
+      setState(() {
+        _mode = _ReaderMode.epub;
+        _webController = null;
+        _epubChapterHtml = chapterHtml;
+        _currentEpubChapter = 0;
+        _webLoadProgress = 100;
+      });
+      return;
+    }
+
     final controller = WebViewController()
       ..setJavaScriptMode(JavaScriptMode.unrestricted)
       ..setBackgroundColor(const Color(0xFFFAFAFA))
@@ -466,13 +490,16 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   }
 
   Future<void> _loadEpubChapter(int index) async {
-    final controller = _webController;
-    if (controller == null || _epubChapterHtml.isEmpty) {
+    if (_epubChapterHtml.isEmpty) {
       return;
     }
 
     final clamped = index.clamp(0, _epubChapterHtml.length - 1);
-    await controller.loadHtmlString(_epubChapterHtml[clamped]);
+
+    final controller = _webController;
+    if (controller != null) {
+      await controller.loadHtmlString(_epubChapterHtml[clamped]);
+    }
 
     if (!mounted) {
       return;
@@ -480,7 +507,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
     setState(() {
       _currentEpubChapter = clamped;
-      _webLoadProgress = 0;
+      _webLoadProgress = controller == null ? 100 : 0;
     });
   }
 
@@ -1753,6 +1780,23 @@ class _BookReaderScreenState extends State<BookReaderScreen>
               ],
             ),
           ),
+        ),
+      );
+    }
+
+    if (_mode == _ReaderMode.epub && (!_supportsEmbeddedWebView && !kIsWeb && PlatformDetection.isLinux)) {
+      if (_epubChapterHtml.isEmpty) {
+        return const Center(child: Text('No EPUB chapters found.'));
+      }
+
+      final chapter = _epubChapterHtml[
+          _currentEpubChapter.clamp(0, _epubChapterHtml.length - 1)];
+
+      return SingleChildScrollView(
+        padding: const EdgeInsets.fromLTRB(16, 16, 16, 28),
+        child: HtmlWidget(
+          chapter,
+          textStyle: Theme.of(context).textTheme.bodyLarge,
         ),
       );
     }
