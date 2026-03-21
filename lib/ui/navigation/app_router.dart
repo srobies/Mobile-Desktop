@@ -6,6 +6,7 @@ import '../../auth/repositories/session_repository.dart';
 import '../../auth/repositories/user_repository.dart';
 import '../../data/services/connectivity_service.dart';
 import '../../di/injection.dart';
+import '../screens/auth/emby_connect_screen.dart';
 import '../screens/auth/login_screen.dart';
 import '../screens/auth/server_screen.dart';
 import '../screens/auth/server_select_screen.dart';
@@ -100,13 +101,15 @@ import 'destinations.dart';
 const _authRoutes = {
   Destinations.startup,
   Destinations.serverSelect,
+  Destinations.embyConnect,
   Destinations.server,
   Destinations.login,
 };
 
 bool _isOfflineAllowed(String path) {
   if (path.startsWith('/settings')) return true;
-  if (path == Destinations.videoPlayer || path == Destinations.audioPlayer) return true;
+  if (path == Destinations.videoPlayer || path == Destinations.audioPlayer)
+    return true;
   return false;
 }
 
@@ -144,6 +147,10 @@ final appRouter = GoRouter(
       builder: (context, state) => const ServerSelectScreen(),
     ),
     GoRoute(
+      path: Destinations.embyConnect,
+      builder: (context, state) => const EmbyConnectScreen(),
+    ),
+    GoRoute(
       path: Destinations.server,
       builder: (context, state) {
         final serverId = state.uri.queryParameters['serverId'] ?? '';
@@ -166,9 +173,8 @@ final appRouter = GoRouter(
     ),
     GoRoute(
       path: Destinations.search,
-      builder: (context, state) => SearchScreen(
-        initialQuery: state.uri.queryParameters['query'],
-      ),
+      builder: (context, state) =>
+          SearchScreen(initialQuery: state.uri.queryParameters['query']),
     ),
 
     // Browsing
@@ -178,9 +184,9 @@ final appRouter = GoRouter(
         final libraryId = state.pathParameters['libraryId']!;
         final typesParam = state.uri.queryParameters['types'];
         final includeItemTypes = typesParam
-          ?.split(',')
-          .map(Uri.decodeComponent)
-          .toList();
+            ?.split(',')
+            .map(Uri.decodeComponent)
+            .toList();
         return LibraryBrowseScreen(
           libraryId: libraryId,
           includeItemTypes: includeItemTypes,
@@ -265,7 +271,11 @@ final appRouter = GoRouter(
       builder: (context, state) {
         final itemId = state.pathParameters['itemId']!;
         final serverId = state.uri.queryParameters['serverId'];
-        return ItemDetailScreen(key: ValueKey(itemId), itemId: itemId, serverId: serverId);
+        return ItemDetailScreen(
+          key: ValueKey(itemId),
+          itemId: itemId,
+          serverId: serverId,
+        );
       },
       routes: [
         GoRoute(
@@ -304,8 +314,7 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: 'series-recordings',
-          builder: (context, state) =>
-              const LiveTvSeriesRecordingsScreen(),
+          builder: (context, state) => const LiveTvSeriesRecordingsScreen(),
         ),
         GoRoute(
           path: 'player',
@@ -384,9 +393,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminUsersEdit,
-          builder: (context, state) => AdminUserEditScreen(
-            userId: state.pathParameters['userId']!,
-          ),
+          builder: (context, state) =>
+              AdminUserEditScreen(userId: state.pathParameters['userId']!),
         ),
         GoRoute(
           path: Destinations.adminLibraries,
@@ -436,9 +444,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminTasksDetail,
-          builder: (context, state) => AdminTaskDetailScreen(
-            taskId: state.pathParameters['taskId']!,
-          ),
+          builder: (context, state) =>
+              AdminTaskDetailScreen(taskId: state.pathParameters['taskId']!),
         ),
         GoRoute(
           path: Destinations.adminPlugins,
@@ -486,9 +493,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: Destinations.adminMetadataEdit,
-          builder: (context, state) => AdminMetadataEditScreen(
-            itemId: state.pathParameters['itemId']!,
-          ),
+          builder: (context, state) =>
+              AdminMetadataEditScreen(itemId: state.pathParameters['itemId']!),
         ),
       ],
     ),
@@ -627,9 +633,8 @@ final appRouter = GoRouter(
         ),
         GoRoute(
           path: 'series/:seriesId',
-          builder: (context, state) => SavedSeriesScreen(
-            seriesId: state.pathParameters['seriesId']!,
-          ),
+          builder: (context, state) =>
+              SavedSeriesScreen(seriesId: state.pathParameters['seriesId']!),
           routes: [
             GoRoute(
               path: 'season/:seasonId',
@@ -642,4 +647,4 @@ final appRouter = GoRouter(
       ],
     ),
   ],
-  );
+);

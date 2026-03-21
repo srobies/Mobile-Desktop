@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
+import 'package:server_core/server_core.dart';
 
 import '../../../auth/models/server.dart';
 import '../../../auth/models/server_addition_state.dart';
@@ -60,7 +61,9 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
     _discoverySub?.cancel();
     _discoverySub = _discoveryService.discoverLocalServers().listen(
       (server) {
-        final savedAddresses = _serverRepo.servers.map((s) => s.address).toSet();
+        final savedAddresses = _serverRepo.servers
+            .map((s) => s.address)
+            .toSet();
         if (!savedAddresses.contains(server.address)) {
           if (mounted) {
             setState(() => _discoveredServers.add(server));
@@ -107,8 +110,14 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
         title: const Text('Remove Server'),
         content: Text('Remove "${server.name}" from your servers?'),
         actions: [
-          TextButton(onPressed: () => ctx.pop(false), child: const Text('Cancel')),
-          TextButton(onPressed: () => ctx.pop(true), child: const Text('Remove')),
+          TextButton(
+            onPressed: () => ctx.pop(false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => ctx.pop(true),
+            child: const Text('Remove'),
+          ),
         ],
       ),
     );
@@ -142,37 +151,67 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           if (servers.isNotEmpty) ...[
-            Text('Saved Servers', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+            Text(
+              'Saved Servers',
+              style: Theme.of(
+                context,
+              ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+            ),
             const SizedBox(height: 8),
             ...servers.map((server) => _buildSavedServerTile(server)),
             const SizedBox(height: 20),
           ],
-          Text('Discovered Servers', style: Theme.of(context).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold)),
+          Text(
+            'Discovered Servers',
+            style: Theme.of(
+              context,
+            ).textTheme.titleSmall?.copyWith(fontWeight: FontWeight.bold),
+          ),
           const SizedBox(height: 8),
           if (_discoveredServers.isNotEmpty)
-            ..._discoveredServers.map((server) => _buildDiscoveredServerTile(server))
+            ..._discoveredServers.map(
+              (server) => _buildDiscoveredServerTile(server),
+            )
           else if (_isDiscovering)
             const Padding(
               padding: EdgeInsets.symmetric(vertical: 16),
-              child: Center(child: SizedBox(height: 24, width: 24, child: CircularProgressIndicator(strokeWidth: 2))),
+              child: Center(
+                child: SizedBox(
+                  height: 24,
+                  width: 24,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             )
           else
             Padding(
               padding: const EdgeInsets.symmetric(vertical: 12),
               child: Text(
                 'None found',
-                style: TextStyle(color: Colors.white.withValues(alpha: 0.4), fontSize: 14),
+                style: TextStyle(
+                  color: Colors.white.withValues(alpha: 0.4),
+                  fontSize: 14,
+                ),
               ),
             ),
           if (_isDiscovering && _discoveredServers.isNotEmpty)
             const Padding(
               padding: EdgeInsets.only(top: 4, bottom: 8),
-              child: Center(child: SizedBox(height: 16, width: 16, child: CircularProgressIndicator(strokeWidth: 2))),
+              child: Center(
+                child: SizedBox(
+                  height: 16,
+                  width: 16,
+                  child: CircularProgressIndicator(strokeWidth: 2),
+                ),
+              ),
             ),
           if (_errorMessage != null)
             Padding(
               padding: const EdgeInsets.only(top: 8),
-              child: Text(_errorMessage!, style: const TextStyle(color: Color(0xFFef4444), fontSize: 14)),
+              child: Text(
+                _errorMessage!,
+                style: const TextStyle(color: Color(0xFFef4444), fontSize: 14),
+              ),
             ),
           const SizedBox(height: 16),
           Row(
@@ -182,6 +221,21 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
                 onPressed: _isConnecting ? null : _showAddServerDialog,
                 icon: const Icon(Icons.add, size: 18),
                 label: const Text('Connect manually'),
+                style: OutlinedButton.styleFrom(
+                  side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+                  foregroundColor: Colors.white.withValues(alpha: 0.8),
+                ),
+              ),
+              const SizedBox(width: 12),
+              OutlinedButton.icon(
+                onPressed: _isConnecting
+                    ? null
+                    : () => context.go(Destinations.embyConnect),
+                icon: const ServerTypeIcon(
+                  serverType: ServerType.emby,
+                  size: 18,
+                ),
+                label: const Text('Emby Connect'),
                 style: OutlinedButton.styleFrom(
                   side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
                   foregroundColor: Colors.white.withValues(alpha: 0.8),
@@ -204,22 +258,36 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
           borderRadius: BorderRadius.circular(12),
           focusColor: const Color(0xFF00A4DC),
           hoverColor: const Color(0xFF00A4DC).withValues(alpha: 0.3),
-          onTap: () => context.go('${Destinations.server}?serverId=${server.id}'),
+          onTap: () =>
+              context.go('${Destinations.server}?serverId=${server.id}'),
           onLongPress: () => _deleteServer(server),
           child: Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
             child: Row(
               children: [
-                ServerTypeIcon(serverType: server.serverType, size: 24, color: Colors.white.withValues(alpha: 0.7)),
+                ServerTypeIcon(
+                  serverType: server.serverType,
+                  size: 24,
+                  color: Colors.white.withValues(alpha: 0.7),
+                ),
                 const SizedBox(width: 12),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(server.name, style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.9))),
+                      Text(
+                        server.name,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
+                      ),
                       Text(
                         '${server.address} • ${server.version}',
-                        style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5)),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
                       ),
                     ],
                   ),
@@ -259,11 +327,17 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
                     children: [
                       Text(
                         server.name,
-                        style: TextStyle(fontWeight: FontWeight.w600, color: Colors.white.withValues(alpha: 0.9)),
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.white.withValues(alpha: 0.9),
+                        ),
                       ),
                       Text(
                         server.address,
-                        style: TextStyle(fontSize: 13, color: Colors.white.withValues(alpha: 0.5)),
+                        style: TextStyle(
+                          fontSize: 13,
+                          color: Colors.white.withValues(alpha: 0.5),
+                        ),
                       ),
                     ],
                   ),
@@ -295,7 +369,10 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
           onSubmitted: (value) => Navigator.of(ctx).pop(value),
         ),
         actions: [
-          TextButton(onPressed: () => Navigator.of(ctx).pop(), child: const Text('Cancel')),
+          TextButton(
+            onPressed: () => Navigator.of(ctx).pop(),
+            child: const Text('Cancel'),
+          ),
           TextButton(
             onPressed: () => Navigator.of(ctx).pop(_addressController.text),
             child: const Text('Connect'),

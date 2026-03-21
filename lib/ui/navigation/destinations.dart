@@ -23,6 +23,7 @@ class Destinations {
   // Auth
   static const startup = '/';
   static const serverSelect = '/server-select';
+  static const embyConnect = '/emby-connect';
   static const server = '/server';
   static const login = '/login';
 
@@ -133,6 +134,7 @@ class Destinations {
     }
     return base;
   }
+
   static String libraryView(String libraryId) => '/library-view/$libraryId';
   static String libraryGenresOf(String libraryId) =>
       '/library/$libraryId/genres';
@@ -144,25 +146,34 @@ class Destinations {
     final base = '/item/$itemId';
     return serverId != null ? '$base?serverId=$serverId' : base;
   }
+
   static String itemListOf(String itemId) => '/item/$itemId/list';
   static String musicFavoritesOf(String parentId) =>
       '/music-favorites/$parentId';
-  static String genre(String genreName, {required String genreId, String? parentId, String? includeType}) {
+  static String genre(
+    String genreName, {
+    required String genreId,
+    String? parentId,
+    String? includeType,
+  }) {
     final base = '/genre/${Uri.encodeComponent(genreName)}';
     final params = <String>['genreId=$genreId'];
     if (parentId != null) params.add('parentId=$parentId');
     if (includeType != null) params.add('includeType=$includeType');
     return '$base?${params.join('&')}';
   }
+
   static String folder(String folderId) => '/folder/$folderId';
-  static String collection(String collectionId) =>
-      '/collection/$collectionId';
+  static String collection(String collectionId) => '/collection/$collectionId';
   static String musicLibrary(String libraryId) => '/music/$libraryId';
   static String photo(String itemId) => '/player/photo/$itemId';
   static String book(String itemId, {String? serverId}) {
     final base = '/player/book/$itemId';
-    return serverId != null ? '$base?serverId=${Uri.encodeComponent(serverId)}' : base;
+    return serverId != null
+        ? '$base?serverId=${Uri.encodeComponent(serverId)}'
+        : base;
   }
+
   static String itemOrPhoto(String itemId, {String? serverId, String? type}) =>
       type == 'Photo' ? photo(itemId) : item(itemId, serverId: serverId);
   static String nextUpFor(String itemId) => '/player/next-up/$itemId';
@@ -171,8 +182,7 @@ class Destinations {
   static String searchWith(String query) =>
       '/search?query=${Uri.encodeComponent(query)}';
   static String seerrMedia(String itemId) => '/seerr/media/$itemId';
-  static String seerrPerson(String personId) =>
-      '/seerr/person/$personId';
+  static String seerrPerson(String personId) => '/seerr/person/$personId';
 
   static String downloadedSeries(String seriesId) =>
       '/downloads/series/$seriesId';
