@@ -69,7 +69,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _SettingsEntry(
         icon: Icons.featured_play_list,
         title: 'Media Bar',
-        subtitle: 'Featured content, appearance, trailers',
+        subtitle: 'Featured content, appearance',
         onTap: () => context.push(Destinations.settingsMediaBar),
       ),
       _SettingsEntry(
@@ -96,7 +96,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       _SettingsEntry(
         icon: Icons.download,
         title: 'Downloads',
-        subtitle: 'Quality, storage, WiFi-only',
+        subtitle: 'Quality, storage',
         onTap: () => context.push(Destinations.settingsDownloads),
       ),
     ];

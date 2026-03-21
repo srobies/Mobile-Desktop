@@ -40,13 +40,14 @@ class DownloadSettingsScreen extends ConsumerWidget {
           ),
 
           const _Section(title: 'Network'),
-          SwitchListTile(
-            secondary: const Icon(Icons.wifi),
-            title: const Text('WiFi-Only Downloads'),
-            subtitle: const Text('Only download when connected to WiFi'),
-            value: wifiOnly,
-            onChanged: (v) => prefs.set(UserPreferences.downloadWifiOnly, v),
-          ),
+          if (!PlatformDetection.isDesktop)
+            SwitchListTile(
+              secondary: const Icon(Icons.wifi),
+              title: const Text('WiFi-Only Downloads'),
+              subtitle: const Text('Only download when connected to WiFi'),
+              value: wifiOnly,
+              onChanged: (v) => prefs.set(UserPreferences.downloadWifiOnly, v),
+            ),
           ListTile(
             leading: const Icon(Icons.download),
             title: const Text('Concurrent Downloads'),

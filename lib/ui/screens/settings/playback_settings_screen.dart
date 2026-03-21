@@ -117,12 +117,12 @@ class PlaybackSettingsScreen extends StatelessWidget {
             divisions: 30,
             labelOf: (v) => v == 0 ? 'Disabled' : '${(v / 1000).round()}s',
           ),
-          SwitchPreferenceTile(
-            preference: UserPreferences.cinemaModeEnabled,
-            title: 'Cinema Mode',
-            subtitle: 'Play trailers and intros before content',
-            icon: Icons.movie,
-          ),
+          // SwitchPreferenceTile(
+          //   preference: UserPreferences.cinemaModeEnabled,
+          //   title: 'Cinema Mode',
+          //   subtitle: 'Play trailers and intros before content',
+          //   icon: Icons.movie,
+          // ),
           SwitchPreferenceTile(
             preference: UserPreferences.mediaQueuingEnabled,
             title: 'Media Queuing',
