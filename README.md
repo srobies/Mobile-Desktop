@@ -22,8 +22,25 @@ flutter pub get
 
 ### Requirements
 
-1. **Visual Studio 2022** (Community edition or higher)
-2. The following Visual Studio workloads/components (install via Visual Studio Installer → Modify):
+1. **Windows 10 or Windows 11**
+
+2. **PowerShell 5.1+**
+   - Included with modern Windows installations
+
+3. **Git**
+   - Install from [git-scm.com](https://git-scm.com/)
+
+4. **Flutter SDK**
+   - Stable channel, 3.41+
+   - Either add `flutter` to `PATH` or install it at `C:\flutter\bin\flutter.bat`
+   - Verify with:
+     ```powershell
+     flutter doctor -v
+     ```
+
+5. **Visual Studio 2022** (Community edition or higher)
+
+6. The following Visual Studio workloads/components (install via Visual Studio Installer → Modify):
    - **Desktop development with C++** workload
    - **MSVC v142+ C++ x64/x86 build tools** (included in the workload)
    - **C++ CMake tools for Windows** (included in the workload)
@@ -42,7 +59,58 @@ flutter pub get
      --passive --norestart
    ```
 
-### Portable EXE (Release Build)
+7. **Inno Setup 6**
+   - Install from [innosetup.com](https://jrsoftware.org/isinfo.php)
+   - The build script auto-detects `ISCC.exe` from common install paths and registry entries
+
+### One-time setup checklist
+
+Run these checks before the first Windows build:
+
+```powershell
+flutter doctor -v
+where flutter
+```
+
+Confirm these work:
+- `flutter doctor -v` shows Windows desktop toolchain ready
+- Visual Studio C++ desktop components are installed
+- Inno Setup 6 is installed
+
+### One-command full rebuild installer
+
+From the repo root, run:
+
+```powershell
+.\build-windows.ps1
+```
+
+What this does:
+- runs `flutter clean`
+- runs `flutter pub get`
+- builds Windows release
+- builds the Inno Setup installer
+  - reads the installer version automatically from `pubspec.yaml`
+- copies the final installer to the repo root
+
+Final outputs:
+- Root copy: `Moonfin-Setup-x64.exe`
+- Build copy: `build\windows\installer\Moonfin-Setup-x64.exe`
+
+Generated during the build:
+- `build\windows\installer\moonfin.generated.iss`
+
+### Example release flow
+
+```powershell
+git pull
+.\build-windows.ps1
+```
+
+After the script finishes, share or test:
+- `Moonfin-Setup-x64.exe`
+
+### Portable EXE only
 
 ```bash
 flutter build windows --release

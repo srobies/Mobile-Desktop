@@ -46,3 +46,12 @@ app.*.map.json
 
 # Nested Android package Gradle caches
 **/.gradle/
+
+# Local Windows diagnostics and generated installer files
+/app_all.txt
+/crash_events.txt
+/windows/installer/*.generated.iss
+/windows/installer/iscc.log
+
+# Windows installer
+/Moonfin-Setup-x64.exe

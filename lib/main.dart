@@ -28,12 +28,22 @@ void main() async {
   await configureDependencies();
 
   final notificationService = GetIt.instance<DownloadNotificationService>();
-  await notificationService.initialize();
+  try {
+    await notificationService.initialize();
+  } catch (error) {
+    debugPrint('DownloadNotificationService init failed: $error');
+  }
 
-  await initAudioService(
-    manager: GetIt.instance<PlaybackManager>(),
-    clientFactory: GetIt.instance<MediaServerClientFactory>(),
-  );
+  if (PlatformDetection.isMobile) {
+    try {
+      await initAudioService(
+        manager: GetIt.instance<PlaybackManager>(),
+        clientFactory: GetIt.instance<MediaServerClientFactory>(),
+      );
+    } catch (error) {
+      debugPrint('AudioService init failed: $error');
+    }
+  }
 
   try {
     final session = await AudioSession.instance;
