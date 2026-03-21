@@ -129,7 +129,9 @@ class _LibraryBrowseScreenState extends State<LibraryBrowseScreen> {
 
   double _gridBaseAspectRatio() {
     if (_vm.isMusicBrowse || _vm.isPlaylistBrowse) return 1.0;
-    if (_vm.items.isNotEmpty && _vm.items.every(_vm.isNavigableFolder)) {
+    if (_vm.imageType != ImageType.poster &&
+        _vm.items.isNotEmpty &&
+        _vm.items.every(_vm.isNavigableFolder)) {
       return 16 / 9;
     }
     return switch (_vm.imageType) {
@@ -141,7 +143,7 @@ class _LibraryBrowseScreenState extends State<LibraryBrowseScreen> {
 
   double _itemAspectRatio(AggregatedItem item) {
     if (_vm.isMusicBrowse || _vm.isPlaylistBrowse) return 1.0;
-    if (_vm.isNavigableFolder(item)) return 16 / 9;
+    if (_vm.isNavigableFolder(item) && _vm.imageType != ImageType.poster) return 16 / 9;
     return switch (_vm.imageType) {
       ImageType.thumb => switch (item.type) {
           'MusicAlbum' || 'MusicArtist' || 'Audio' || 'Playlist' || 'Person' => 1.0,
@@ -175,6 +177,18 @@ class _LibraryBrowseScreenState extends State<LibraryBrowseScreen> {
     final prefersThumbArtwork = _prefersThumbArtwork(item);
 
     if (_vm.isNavigableFolder(item)) {
+      if (_vm.imageType == ImageType.poster) {
+        if (item.primaryImageTag != null) {
+          return api.getPrimaryImageUrl(item.id, tag: item.primaryImageTag);
+        }
+        if (itemThumbTag != null) {
+          return api.getThumbImageUrl(item.id, tag: itemThumbTag);
+        }
+        if (item.backdropImageTags.isNotEmpty) {
+          return api.getBackdropImageUrl(item.id, tag: item.backdropImageTags.first);
+        }
+        return null;
+      }
       if (itemThumbTag != null) {
         return api.getThumbImageUrl(item.id, tag: itemThumbTag);
       }

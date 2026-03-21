@@ -514,7 +514,7 @@ class LibraryBrowseViewModel extends ChangeNotifier {
       _collectionType == 'books' ||
       (includeItemTypes != null && includeItemTypes!.contains('Book'));
 
-    bool get isHomeVideosLibrary =>
+  bool get isHomeVideosLibrary =>
       !isGenreBrowse &&
       includeItemTypes == null &&
       _collectionType == 'homevideos';
