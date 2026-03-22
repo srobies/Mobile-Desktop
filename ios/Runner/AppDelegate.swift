@@ -11,11 +11,40 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     appDelegate?.emitGoogleCastEvent(
       state: appDelegate?.currentCastSession() != nil ? "connected" : "disconnected"
     )
+    appDelegate?.emitCurrentGoogleCastStatus()
     return nil
   }
 
   func onCancel(withArguments arguments: Any?) -> FlutterError? {
     appDelegate?.castEventSink = nil
+    return nil
+  }
+}
+
+private final class NativeDlnaEventStreamHandler: NSObject, FlutterStreamHandler {
+  weak var appDelegate: AppDelegate?
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    appDelegate?.dlnaController.setEventSink { event in events(event) }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    appDelegate?.dlnaController.setEventSink(nil)
+    return nil
+  }
+}
+
+private final class NativeAirPlayEventStreamHandler: NSObject, FlutterStreamHandler {
+  weak var appDelegate: AppDelegate?
+
+  func onListen(withArguments arguments: Any?, eventSink events: @escaping FlutterEventSink) -> FlutterError? {
+    appDelegate?.airPlayController.setEventSink { event in events(event) }
+    return nil
+  }
+
+  func onCancel(withArguments arguments: Any?) -> FlutterError? {
+    appDelegate?.airPlayController.setEventSink(nil)
     return nil
   }
 }
@@ -28,6 +57,10 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
   private var pendingCastRequest: PendingCastRequest?
   private var pendingCastTimeoutWorkItem: DispatchWorkItem?
   private let castEventStreamHandler = NativeCastEventStreamHandler()
+  private let dlnaEventStreamHandler = NativeDlnaEventStreamHandler()
+  private let airPlayEventStreamHandler = NativeAirPlayEventStreamHandler()
+  fileprivate let dlnaController = DlnaController()
+  fileprivate let airPlayController = AirPlayController()
   fileprivate var castEventSink: FlutterEventSink?
 
   private struct PendingCastRequest {
@@ -36,6 +69,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     let title: String
     let subtitle: String?
     let posterUrl: URL?
+    let queueItems: [[String: Any]]
     let startPositionTicks: Int64?
     let result: FlutterResult
   }
@@ -63,6 +97,186 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     )
     castEventStreamHandler.appDelegate = self
     castEventsChannel.setStreamHandler(castEventStreamHandler)
+
+    let dlnaChannel = FlutterMethodChannel(
+      name: "com.moonfin/native_dlna",
+      binaryMessenger: controller.binaryMessenger
+    )
+    let dlnaEventsChannel = FlutterEventChannel(
+      name: "com.moonfin/native_dlna_events",
+      binaryMessenger: controller.binaryMessenger
+    )
+    dlnaEventStreamHandler.appDelegate = self
+    dlnaEventsChannel.setStreamHandler(dlnaEventStreamHandler)
+
+    let airPlayEventsChannel = FlutterEventChannel(
+      name: "com.moonfin/native_airplay_events",
+      binaryMessenger: controller.binaryMessenger
+    )
+    airPlayEventStreamHandler.appDelegate = self
+    airPlayEventsChannel.setStreamHandler(airPlayEventStreamHandler)
+
+    dlnaChannel.setMethodCallHandler { [weak self] (call, result) in
+      guard let self else {
+        result(
+          FlutterError(
+            code: "DLNA_UNAVAILABLE",
+            message: "AppDelegate not available.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      switch call.method {
+      case "discoverDlnaTargets":
+        self.dlnaController.discoverTargets { targets in
+          result(targets)
+        }
+      case "playToDlnaDevice":
+        guard let args = call.arguments as? [String: Any],
+              let targetId = args["targetId"] as? String,
+              let streamUrl = args["streamUrl"] as? String,
+              let title = args["title"] as? String else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid DLNA playback arguments.",
+              details: nil
+            )
+          )
+          return
+        }
+        let startPositionTicks = (args["startPositionTicks"] as? NSNumber)?.int64Value
+        self.dlnaController.playToDevice(
+          targetId: targetId,
+          streamUrl: streamUrl,
+          title: title,
+          startPositionTicks: startPositionTicks
+        ) { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_PLAY_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      case "pauseDlna":
+        self.dlnaController.pause { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      case "playDlna":
+        self.dlnaController.play { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      case "seekDlna":
+        guard let args = call.arguments as? [String: Any],
+              let positionTicks = (args["positionTicks"] as? NSNumber)?.int64Value,
+              positionTicks >= 0 else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid positionTicks.",
+              details: nil
+            )
+          )
+          return
+        }
+        self.dlnaController.seek(positionTicks: positionTicks) { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      case "stopDlna":
+        self.dlnaController.stop { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      case "getDlnaVolume":
+        self.dlnaController.getVolume { volume, error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(volume)
+          }
+        }
+      case "setDlnaVolume":
+        guard let args = call.arguments as? [String: Any],
+              let volume = (args["volume"] as? NSNumber)?.doubleValue else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid volume.",
+              details: nil
+            )
+          )
+          return
+        }
+        self.dlnaController.setVolume(volume) { error in
+          if let error {
+            result(
+              FlutterError(
+                code: "DLNA_ACTION_FAILED",
+                message: error.localizedDescription,
+                details: nil
+              )
+            )
+          } else {
+            result(nil)
+          }
+        }
+      default:
+        result(FlutterMethodNotImplemented)
+      }
+    }
     storageChannel.setMethodCallHandler { (call, result) in
       if call.method == "excludeFromBackup" {
         guard let args = call.arguments as? [String: Any],
@@ -129,6 +343,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
         let subtitle = args["subtitle"] as? String
         let posterUrlRaw = args["posterUrl"] as? String
         let posterUrl = posterUrlRaw.flatMap(URL.init(string:))
+        let queueItems = (args["queueItems"] as? [[String: Any]]) ?? []
         let startPositionTicks = (args["startPositionTicks"] as? NSNumber)?.int64Value
 
         self.startGoogleCastSession(
@@ -137,6 +352,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
           title: title,
           subtitle: subtitle,
           posterUrl: posterUrl,
+          queueItems: queueItems,
           startPositionTicks: startPositionTicks,
           result: result
         )
@@ -200,6 +416,108 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
           remoteClient.stop()
           result(nil)
         }
+      case "getGoogleCastVolume":
+        guard let castSession = self.currentCastSession() else {
+          result(
+            FlutterError(
+              code: "NO_CAST_SESSION",
+              message: "No active Google Cast session.",
+              details: nil
+            )
+          )
+          return
+        }
+        result(Double(castSession.currentDeviceVolume))
+      case "setGoogleCastVolume":
+        guard let args = call.arguments as? [String: Any],
+              let volume = (args["volume"] as? NSNumber)?.doubleValue else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid volume.",
+              details: nil
+            )
+          )
+          return
+        }
+        guard let castSession = self.currentCastSession() else {
+          result(
+            FlutterError(
+              code: "NO_CAST_SESSION",
+              message: "No active Google Cast session.",
+              details: nil
+            )
+          )
+          return
+        }
+        let clamped = max(0.0, min(1.0, volume))
+        castSession.setDeviceVolume(Float(clamped))
+        result(nil)
+      case "pauseAirPlay":
+        self.airPlayController.pause()
+        result(nil)
+      case "playAirPlay":
+        self.airPlayController.play()
+        result(nil)
+      case "seekAirPlay":
+        guard let args = call.arguments as? [String: Any],
+              let positionTicks = (args["positionTicks"] as? NSNumber)?.int64Value,
+              positionTicks >= 0 else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid positionTicks.",
+              details: nil
+            )
+          )
+          return
+        }
+        self.airPlayController.seek(positionTicks: positionTicks)
+        result(nil)
+      case "stopAirPlay":
+        self.airPlayController.stop()
+        result(nil)
+      case "loadAirPlay":
+        guard let args = call.arguments as? [String: Any],
+              let url = args["url"] as? String else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing url for loadAirPlay.",
+              details: nil
+            )
+          )
+          return
+        }
+        let title = args["title"] as? String ?? ""
+        let positionTicks = (args["positionTicks"] as? NSNumber)?.int64Value ?? 0
+        let positionSeconds = Double(positionTicks) / 10_000_000.0
+        self.airPlayController.preparePendingContent(
+          urlString: url,
+          title: title,
+          positionSeconds: positionSeconds
+        )
+        result(nil)
+      case "updateAirPlayPlaybackState":
+        guard let args = call.arguments as? [String: Any],
+              let isPlaying = args["isPlaying"] as? Bool,
+              let isBuffering = args["isBuffering"] as? Bool,
+              let positionTicks = (args["positionTicks"] as? NSNumber)?.int64Value else {
+          result(
+            FlutterError(
+              code: "BAD_ARGS",
+              message: "Missing or invalid AirPlay playback state arguments.",
+              details: nil
+            )
+          )
+          return
+        }
+        self.airPlayController.updatePlaybackState(
+          isPlaying: isPlaying,
+          isBuffering: isBuffering,
+          positionTicks: positionTicks
+        )
+        result(nil)
       default:
         result(FlutterMethodNotImplemented)
       }
@@ -254,6 +572,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     title: String,
     subtitle: String?,
     posterUrl: URL?,
+    queueItems: [[String: Any]],
     startPositionTicks: Int64?,
     result: @escaping FlutterResult
   ) {
@@ -269,6 +588,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
           title: title,
           subtitle: subtitle,
           posterUrl: posterUrl,
+          queueItems: queueItems,
           startPositionTicks: startPositionTicks,
           result: result
         )
@@ -308,6 +628,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
         title: title,
         subtitle: subtitle,
         posterUrl: posterUrl,
+        queueItems: queueItems,
         startPositionTicks: startPositionTicks,
         result: result
       )
@@ -347,6 +668,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     title: String,
     subtitle: String?,
     posterUrl: URL?,
+    queueItems: [[String: Any]],
     startPositionTicks: Int64?,
     result: @escaping FlutterResult
   ) {
@@ -361,13 +683,80 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
       return
     }
 
+    let startSeconds =
+      (startPositionTicks != nil && startPositionTicks! > 0)
+      ? Double(startPositionTicks!) / 10_000_000.0
+      : 0
+    let effectiveQueueItems = queueItems.isEmpty
+      ? [[
+        "streamUrl": streamUrl.absoluteString,
+        "title": title,
+        "subtitle": subtitle ?? "",
+        "posterUrl": posterUrl?.absoluteString ?? "",
+      ]]
+      : queueItems
+
+    if effectiveQueueItems.count > 1 {
+      let queue = effectiveQueueItems.compactMap { buildMediaQueueItem(from: $0) }
+      guard !queue.isEmpty else {
+        result(
+          FlutterError(
+            code: "BAD_ARGS",
+            message: "Queue items are invalid.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      remoteClient.queueLoad(
+        with: queue,
+        start: 0,
+        playPosition: startSeconds,
+        repeatMode: .off,
+        customData: nil
+      )
+    } else {
+      let entry = effectiveQueueItems[0]
+      guard let mediaInfo = buildMediaInformation(from: entry) else {
+        result(
+          FlutterError(
+            code: "BAD_ARGS",
+            message: "Missing queue stream URL.",
+            details: nil
+          )
+        )
+        return
+      }
+
+      let requestBuilder = GCKMediaLoadRequestDataBuilder()
+      requestBuilder.mediaInformation = mediaInfo
+      requestBuilder.startTime = startSeconds
+      remoteClient.loadMedia(with: requestBuilder.build())
+    }
+
+    remoteClient.add(self)
+    emitCurrentGoogleCastStatus(from: remoteClient)
+    result(nil)
+  }
+
+  private func buildMediaInformation(from item: [String: Any]) -> GCKMediaInformation? {
+    guard let streamUrlRaw = item["streamUrl"] as? String,
+          let streamUrl = URL(string: streamUrlRaw) else {
+      return nil
+    }
+
+    let title = (item["title"] as? String) ?? "Moonfin"
+    let subtitle = item["subtitle"] as? String
+    let posterUrlRaw = item["posterUrl"] as? String
+    let posterUrl = posterUrlRaw.flatMap(URL.init(string:))
+
     let metadata = GCKMediaMetadata(metadataType: .movie)
     metadata.setString(title, forKey: kGCKMetadataKeyTitle)
     if let subtitle,
        !subtitle.isEmpty {
       metadata.setString(subtitle, forKey: kGCKMetadataKeySubtitle)
     }
-
     if let posterUrl {
       metadata.addImage(GCKImage(url: posterUrl, width: 0, height: 0))
     }
@@ -376,17 +765,18 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     mediaInfoBuilder.streamType = .buffered
     mediaInfoBuilder.contentType = "application/octet-stream"
     mediaInfoBuilder.metadata = metadata
+    return mediaInfoBuilder.build()
+  }
 
-    let requestBuilder = GCKMediaLoadRequestDataBuilder()
-    requestBuilder.mediaInformation = mediaInfoBuilder.build()
-
-    if let startPositionTicks,
-       startPositionTicks > 0 {
-      requestBuilder.startTime = Double(startPositionTicks) / 10_000_000.0
+  private func buildMediaQueueItem(from item: [String: Any]) -> GCKMediaQueueItem? {
+    guard let mediaInfo = buildMediaInformation(from: item) else {
+      return nil
     }
 
-    remoteClient.loadMedia(with: requestBuilder.build())
-    result(nil)
+    let queueItemBuilder = GCKMediaQueueItemBuilder()
+    queueItemBuilder.mediaInformation = mediaInfo
+    queueItemBuilder.autoplay = true
+    return queueItemBuilder.build()
   }
 
   private func withGoogleCastRemoteClient(
@@ -422,11 +812,19 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
   }
 
   func sessionManager(_ sessionManager: GCKSessionManager, didStart session: GCKSession) {
+    if let castSession = session as? GCKCastSession {
+      castSession.remoteMediaClient?.add(self)
+      emitCurrentGoogleCastStatus(from: castSession.remoteMediaClient)
+    }
     emitGoogleCastEvent(state: "connected")
     completePendingCastIfPossible(for: session)
   }
 
   func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
+    if let castSession = session as? GCKCastSession {
+      castSession.remoteMediaClient?.add(self)
+      emitCurrentGoogleCastStatus(from: castSession.remoteMediaClient)
+    }
     emitGoogleCastEvent(state: "connected")
     completePendingCastIfPossible(for: session)
   }
@@ -448,10 +846,16 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
   }
 
   func sessionManager(_ sessionManager: GCKSessionManager, didEnd session: GCKSession, withError error: Error?) {
+    if let castSession = session as? GCKCastSession {
+      castSession.remoteMediaClient?.remove(self)
+    }
     emitGoogleCastEvent(state: "disconnected")
   }
 
   func sessionManager(_ sessionManager: GCKSessionManager, didSuspend session: GCKSession, with reason: GCKConnectionSuspendReason) {
+    if let castSession = session as? GCKCastSession {
+      castSession.remoteMediaClient?.remove(self)
+    }
     emitGoogleCastEvent(state: "disconnected")
   }
 
@@ -472,6 +876,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
       title: request.title,
       subtitle: request.subtitle,
       posterUrl: request.posterUrl,
+      queueItems: request.queueItems,
       startPositionTicks: request.startPositionTicks,
       result: request.result
     )
@@ -495,7 +900,7 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
     )
   }
 
-  fileprivate func emitGoogleCastEvent(state: String, message: String? = nil) {
+  fileprivate func emitGoogleCastEvent(state: String, message: String? = nil, positionTicks: Int64? = nil) {
     var event: [String: Any] = [
       "kind": "googleCast",
       "state": state,
@@ -504,11 +909,45 @@ private final class NativeCastEventStreamHandler: NSObject, FlutterStreamHandler
        !message.isEmpty {
       event["message"] = message
     }
+    if let positionTicks, positionTicks > 0 {
+      event["positionTicks"] = positionTicks
+    }
 
     castEventSink?(event)
   }
 
+  fileprivate func emitCurrentGoogleCastStatus(from client: GCKRemoteMediaClient? = nil) {
+    let remoteClient: GCKRemoteMediaClient?
+    if let client {
+      remoteClient = client
+    } else {
+      remoteClient = currentCastSession()?.remoteMediaClient
+    }
+    guard let remoteClient,
+          let status = remoteClient.mediaStatus else {
+      return
+    }
+
+    let state: String
+    switch status.playerState {
+    case .playing: state = "playing"
+    case .paused: state = "paused"
+    case .buffering: state = "buffering"
+    case .idle: state = "idle"
+    default: return
+    }
+
+    let positionTicks = Int64(remoteClient.approximateStreamPosition() * 10_000_000)
+    emitGoogleCastEvent(state: state, positionTicks: positionTicks)
+  }
+
   fileprivate func currentCastSession() -> GCKCastSession? {
     return GCKCastContext.sharedInstance().sessionManager.currentCastSession
+  }
+}
+
+extension AppDelegate: GCKRemoteMediaClientListener {
+  func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
+    emitCurrentGoogleCastStatus(from: client)
   }
 }

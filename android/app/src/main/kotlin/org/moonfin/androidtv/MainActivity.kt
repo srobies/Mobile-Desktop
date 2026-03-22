@@ -20,8 +20,12 @@ import androidx.mediarouter.media.MediaRouter
 import com.google.android.gms.cast.CastMediaControlIntent
 import com.google.android.gms.cast.MediaInfo
 import com.google.android.gms.cast.MediaLoadRequestData
+import com.google.android.gms.cast.MediaQueueData
+import com.google.android.gms.cast.MediaQueueItem
 import com.google.android.gms.cast.MediaMetadata
 import com.google.android.gms.cast.MediaSeekOptions
+import com.google.android.gms.cast.MediaStatus
+import com.google.android.gms.cast.framework.media.RemoteMediaClient
 import com.google.android.gms.cast.framework.CastContext
 import com.google.android.gms.cast.framework.CastSession
 import com.google.android.gms.cast.framework.SessionManagerListener
@@ -38,16 +42,23 @@ class MainActivity : AudioServiceActivity() {
     private var castEventsChannel: EventChannel? = null
     private var castEventsSink: EventChannel.EventSink? = null
     private var castStatusListener: SessionManagerListener<CastSession>? = null
+    private var dlnaChannel: MethodChannel? = null
+    private var dlnaEventsChannel: EventChannel? = null
+    private var dlnaController: DlnaController? = null
     private var pipEnabled = false
     private val handler = Handler(Looper.getMainLooper())
     private var dismissRunnable: Runnable? = null
     private var pendingCastTimeout: Runnable? = null
     private var pendingCastListener: SessionManagerListener<CastSession>? = null
+    private var castMediaListener: RemoteMediaClient.Listener? = null
+    private var castProgressListener: RemoteMediaClient.ProgressListener? = null
 
     companion object {
         private const val CHANNEL = "org.moonfin.androidtv/pip"
         private const val CAST_CHANNEL = "com.moonfin/native_cast"
         private const val CAST_EVENTS_CHANNEL = "com.moonfin/native_cast_events"
+        private const val DLNA_CHANNEL = "com.moonfin/native_dlna"
+        private const val DLNA_EVENTS_CHANNEL = "com.moonfin/native_dlna_events"
         private const val ACTION_PLAY_PAUSE = "org.moonfin.androidtv.ACTION_PIP_PLAY_PAUSE"
         private const val DISMISS_DELAY_MS = 300L
     }
@@ -158,6 +169,30 @@ class MainActivity : AudioServiceActivity() {
                         result.success(null)
                     }
                 }
+                "getGoogleCastVolume" -> {
+                    val session = getCurrentCastSession()
+                    if (session == null) {
+                        result.error("NO_CAST_SESSION", "No active Google Cast session", null)
+                        return@setMethodCallHandler
+                    }
+                    result.success(session.volume.toDouble())
+                }
+                "setGoogleCastVolume" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                    val volume = (args["volume"] as? Number)?.toDouble()
+                    if (volume == null || volume.isNaN()) {
+                        result.error("BAD_ARGS", "Missing or invalid volume", null)
+                        return@setMethodCallHandler
+                    }
+                    val session = getCurrentCastSession()
+                    if (session == null) {
+                        result.error("NO_CAST_SESSION", "No active Google Cast session", null)
+                        return@setMethodCallHandler
+                    }
+                    val clamped = volume.coerceIn(0.0, 1.0)
+                    session.setVolume(clamped)
+                    result.success(null)
+                }
                 else -> result.notImplemented()
             }
         }
@@ -172,6 +207,7 @@ class MainActivity : AudioServiceActivity() {
                 emitGoogleCastEvent(
                     state = if (getCurrentCastSession() != null) "connected" else "disconnected",
                 )
+                emitCurrentGoogleCastStatus()
             }
 
             override fun onCancel(arguments: Any?) {
@@ -181,8 +217,54 @@ class MainActivity : AudioServiceActivity() {
 
         registerCastStatusListener()
 
-        // Register with RECEIVER_EXPORTED so the PiP framework (running in
-        // SystemUI process) can deliver the broadcast to our receiver.
+        dlnaController = DlnaController(this)
+
+        dlnaChannel = MethodChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DLNA_CHANNEL,
+        )
+        dlnaChannel?.setMethodCallHandler { call, result ->
+            val ctrl = dlnaController
+            if (ctrl == null) {
+                result.error("DLNA_UNAVAILABLE", "DLNA controller not initialized", null)
+                return@setMethodCallHandler
+            }
+            when (call.method) {
+                "discoverDlnaTargets" -> ctrl.discoverTargets(result)
+                "playToDlnaDevice" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                    ctrl.playToDevice(args, result)
+                }
+                "pauseDlna" -> ctrl.pause(result)
+                "playDlna" -> ctrl.play(result)
+                "seekDlna" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                    ctrl.seek(args, result)
+                }
+                "stopDlna" -> ctrl.stop(result)
+                "getDlnaVolume" -> ctrl.getVolume(result)
+                "setDlnaVolume" -> {
+                    val args = call.arguments as? Map<*, *> ?: emptyMap<String, Any>()
+                    ctrl.setVolume(args, result)
+                }
+                else -> result.notImplemented()
+            }
+        }
+
+        dlnaEventsChannel = EventChannel(
+            flutterEngine.dartExecutor.binaryMessenger,
+            DLNA_EVENTS_CHANNEL,
+        )
+        dlnaEventsChannel?.setStreamHandler(object : EventChannel.StreamHandler {
+            override fun onListen(arguments: Any?, events: EventChannel.EventSink?) {
+                dlnaController?.setEventSink(events)
+            }
+
+            override fun onCancel(arguments: Any?) {
+                dlnaController?.setEventSink(null)
+            }
+        })
+
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
             registerReceiver(
                 pipReceiver,
@@ -227,8 +309,6 @@ class MainActivity : AudioServiceActivity() {
             val power = getSystemService(Context.POWER_SERVICE) as PowerManager
             if (!power.isInteractive) return
 
-            // Schedule a dismiss — if onResume fires within the delay,
-            // the user tapped to expand and we cancel.
             dismissRunnable = Runnable {
                 methodChannel?.invokeMethod("onPiPAction", "dismissed")
                 dismissRunnable = null
@@ -287,10 +367,14 @@ class MainActivity : AudioServiceActivity() {
         castStatusListener?.let { listener ->
             sessionManager?.removeSessionManagerListener(listener, CastSession::class.java)
         }
+        unregisterCastMediaCallback()
         try { unregisterReceiver(pipReceiver) } catch (_: Exception) {}
         try { unregisterReceiver(screenReceiver) } catch (_: Exception) {}
         castChannel?.setMethodCallHandler(null)
         castEventsChannel?.setStreamHandler(null)
+        dlnaController?.onDestroy()
+        dlnaChannel?.setMethodCallHandler(null)
+        dlnaEventsChannel?.setStreamHandler(null)
         super.onDestroy()
     }
 
@@ -323,6 +407,7 @@ class MainActivity : AudioServiceActivity() {
         val title = args["title"] as? String ?: "Moonfin"
         val subtitle = args["subtitle"] as? String
         val posterUrl = args["posterUrl"] as? String
+        val queueItems = parseQueueItems(args["queueItems"])
         val startTicks = (args["startPositionTicks"] as? Number)?.toLong()
 
         if (targetId.isNullOrEmpty() || streamUrl.isNullOrEmpty()) {
@@ -355,6 +440,7 @@ class MainActivity : AudioServiceActivity() {
                 title = title,
                 subtitle = subtitle,
                 posterUrl = posterUrl,
+                queueItems = queueItems,
                 startTicks = startTicks,
                 result = result,
             )
@@ -369,12 +455,12 @@ class MainActivity : AudioServiceActivity() {
         val listener = object : SessionManagerListener<CastSession> {
             override fun onSessionStarted(session: CastSession, sessionId: String) {
                 cleanupPendingCast(sessionManager, this)
-                loadOnCastSession(session, streamUrl, title, subtitle, posterUrl, startTicks, result)
+                loadOnCastSession(session, streamUrl, title, subtitle, posterUrl, queueItems, startTicks, result)
             }
 
             override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
                 cleanupPendingCast(sessionManager, this)
-                loadOnCastSession(session, streamUrl, title, subtitle, posterUrl, startTicks, result)
+                loadOnCastSession(session, streamUrl, title, subtitle, posterUrl, queueItems, startTicks, result)
             }
 
             override fun onSessionStartFailed(session: CastSession, error: Int) {
@@ -418,6 +504,7 @@ class MainActivity : AudioServiceActivity() {
         title: String,
         subtitle: String?,
         posterUrl: String?,
+        queueItems: List<Map<String, Any>>,
         startTicks: Long?,
         result: MethodChannel.Result,
     ) {
@@ -427,6 +514,88 @@ class MainActivity : AudioServiceActivity() {
             return
         }
 
+        val startMs = startTicks?.div(10000L) ?: 0L
+        val effectiveQueueItems = if (queueItems.isEmpty()) {
+            listOf(
+                mapOf(
+                    "streamUrl" to streamUrl,
+                    "title" to title,
+                    "subtitle" to (subtitle ?: ""),
+                    "posterUrl" to (posterUrl ?: ""),
+                ),
+            )
+        } else {
+            queueItems
+        }
+
+        if (effectiveQueueItems.size > 1) {
+            val castQueueItems = effectiveQueueItems.mapNotNull { entry ->
+                buildQueueItem(
+                    streamUrl = entry["streamUrl"] as? String,
+                    title = entry["title"] as? String,
+                    subtitle = entry["subtitle"] as? String,
+                    posterUrl = entry["posterUrl"] as? String,
+                )
+            }
+            if (castQueueItems.isEmpty()) {
+                result.error("BAD_ARGS", "Queue items are invalid", null)
+                return
+            }
+
+            val queueData = MediaQueueData.Builder()
+                .setItems(castQueueItems)
+                .setStartIndex(0)
+                .build()
+
+            val loadRequest = MediaLoadRequestData.Builder()
+                .setQueueData(queueData)
+                .setAutoplay(true)
+                .setCurrentTime(startMs)
+                .build()
+
+            remoteClient.load(loadRequest)
+        } else {
+            val single = effectiveQueueItems.first()
+            val mediaInfo = buildMediaInfo(
+                streamUrl = single["streamUrl"] as? String ?: streamUrl,
+                title = single["title"] as? String ?: title,
+                subtitle = single["subtitle"] as? String ?: subtitle,
+                posterUrl = single["posterUrl"] as? String ?: posterUrl,
+            )
+            val loadRequest = MediaLoadRequestData.Builder()
+                .setMediaInfo(mediaInfo)
+                .setAutoplay(true)
+                .setCurrentTime(startMs)
+                .build()
+            remoteClient.load(loadRequest)
+        }
+
+        registerCastMediaListeners(remoteClient)
+        emitCurrentGoogleCastStatus(remoteClient)
+        result.success(null)
+    }
+
+    private fun parseQueueItems(raw: Any?): List<Map<String, Any>> {
+        val entries = raw as? List<*> ?: return emptyList()
+        return entries.mapNotNull { entry ->
+            val map = entry as? Map<*, *> ?: return@mapNotNull null
+            val streamUrl = map["streamUrl"] as? String ?: return@mapNotNull null
+            val title = map["title"] as? String ?: "Moonfin"
+            buildMap<String, Any> {
+                put("streamUrl", streamUrl)
+                put("title", title)
+                (map["subtitle"] as? String)?.let { put("subtitle", it) }
+                (map["posterUrl"] as? String)?.let { put("posterUrl", it) }
+            }
+        }
+    }
+
+    private fun buildMediaInfo(
+        streamUrl: String,
+        title: String,
+        subtitle: String?,
+        posterUrl: String?,
+    ): MediaInfo {
         val metadata = MediaMetadata(MediaMetadata.MEDIA_TYPE_MOVIE).apply {
             putString(MediaMetadata.KEY_TITLE, title)
             if (!subtitle.isNullOrBlank()) {
@@ -439,21 +608,27 @@ class MainActivity : AudioServiceActivity() {
             }
         }
 
-        val mediaInfo = MediaInfo.Builder(streamUrl)
+        return MediaInfo.Builder(streamUrl)
             .setStreamType(MediaInfo.STREAM_TYPE_BUFFERED)
             .setContentType("video/*")
             .setMetadata(metadata)
             .build()
+    }
 
-        val startMs = startTicks?.div(10000L) ?: 0L
-        val loadRequest = MediaLoadRequestData.Builder()
-            .setMediaInfo(mediaInfo)
-            .setAutoplay(true)
-            .setCurrentTime(startMs)
-            .build()
-
-        remoteClient.load(loadRequest)
-        result.success(null)
+    private fun buildQueueItem(
+        streamUrl: String?,
+        title: String?,
+        subtitle: String?,
+        posterUrl: String?,
+    ): MediaQueueItem? {
+        val url = streamUrl ?: return null
+        val mediaInfo = buildMediaInfo(
+            streamUrl = url,
+            title = title ?: "Moonfin",
+            subtitle = subtitle,
+            posterUrl = posterUrl,
+        )
+        return MediaQueueItem.Builder(mediaInfo).build()
     }
 
     private fun withRemoteMediaClient(
@@ -492,18 +667,24 @@ class MainActivity : AudioServiceActivity() {
 
         val listener = object : SessionManagerListener<CastSession> {
             override fun onSessionStarted(session: CastSession, sessionId: String) {
+                registerCastMediaListeners(session.remoteMediaClient)
+                emitCurrentGoogleCastStatus(session.remoteMediaClient)
                 emitGoogleCastEvent("connected")
             }
 
             override fun onSessionResumed(session: CastSession, wasSuspended: Boolean) {
+                registerCastMediaListeners(session.remoteMediaClient)
+                emitCurrentGoogleCastStatus(session.remoteMediaClient)
                 emitGoogleCastEvent("connected")
             }
 
             override fun onSessionEnded(session: CastSession, error: Int) {
+                unregisterCastMediaCallback()
                 emitGoogleCastEvent("disconnected")
             }
 
             override fun onSessionSuspended(session: CastSession, reason: Int) {
+                unregisterCastMediaCallback()
                 emitGoogleCastEvent("disconnected")
             }
 
@@ -524,7 +705,7 @@ class MainActivity : AudioServiceActivity() {
         sessionManager.addSessionManagerListener(listener, CastSession::class.java)
     }
 
-    private fun emitGoogleCastEvent(state: String, message: String? = null) {
+    private fun emitGoogleCastEvent(state: String, message: String? = null, positionTicks: Long? = null) {
         val payload = mutableMapOf<String, Any>(
             "kind" to "googleCast",
             "state" to state,
@@ -532,9 +713,76 @@ class MainActivity : AudioServiceActivity() {
         if (!message.isNullOrBlank()) {
             payload["message"] = message
         }
+        if (positionTicks != null && positionTicks > 0L) {
+            payload["positionTicks"] = positionTicks
+        }
         runOnUiThread {
             castEventsSink?.success(payload)
         }
+    }
+
+    private fun registerCastMediaListeners(remoteClient: RemoteMediaClient?) {
+        if (remoteClient == null) return
+        unregisterCastMediaCallback()
+
+        val listener = object : RemoteMediaClient.Listener {
+            override fun onStatusUpdated() {
+                emitCurrentGoogleCastStatus(remoteClient)
+            }
+
+            override fun onMetadataUpdated() {}
+            override fun onQueueStatusUpdated() {
+                emitCurrentGoogleCastStatus(remoteClient)
+            }
+            override fun onPreloadStatusUpdated() {}
+            override fun onSendingRemoteMediaRequest() {}
+            override fun onAdBreakStatusUpdated() {}
+        }
+
+        val progressListener = RemoteMediaClient.ProgressListener { progressMs, _ ->
+            val status = remoteClient.mediaStatus ?: return@ProgressListener
+            val state = when (status.playerState) {
+                MediaStatus.PLAYER_STATE_PLAYING -> "playing"
+                MediaStatus.PLAYER_STATE_PAUSED -> "paused"
+                MediaStatus.PLAYER_STATE_BUFFERING -> "buffering"
+                MediaStatus.PLAYER_STATE_IDLE -> "idle"
+                else -> return@ProgressListener
+            }
+            val ticks = if (progressMs > 0) progressMs * 10000L else 0L
+            emitGoogleCastEvent(state, positionTicks = ticks)
+        }
+
+        castMediaListener = listener
+        castProgressListener = progressListener
+        remoteClient.addListener(listener)
+        remoteClient.addProgressListener(progressListener, 1000)
+    }
+
+    private fun unregisterCastMediaCallback() {
+        val remoteClient = getCurrentCastSession()?.remoteMediaClient
+        castMediaListener?.let { listener ->
+            remoteClient?.removeListener(listener)
+        }
+        castProgressListener?.let { listener ->
+            remoteClient?.removeProgressListener(listener)
+        }
+        castMediaListener = null
+        castProgressListener = null
+    }
+
+    private fun emitCurrentGoogleCastStatus(remoteClient: RemoteMediaClient? = getCurrentCastSession()?.remoteMediaClient) {
+        val client = remoteClient ?: return
+        val status = client.mediaStatus ?: return
+        val state = when (status.playerState) {
+            MediaStatus.PLAYER_STATE_PLAYING -> "playing"
+            MediaStatus.PLAYER_STATE_PAUSED -> "paused"
+            MediaStatus.PLAYER_STATE_BUFFERING -> "buffering"
+            MediaStatus.PLAYER_STATE_IDLE -> "idle"
+            else -> return
+        }
+        val positionMs = client.approximateStreamPosition
+        val ticks = if (positionMs > 0) positionMs * 10000L else 0L
+        emitGoogleCastEvent(state, positionTicks = ticks)
     }
 
     private fun getCurrentCastSession(): CastSession? {

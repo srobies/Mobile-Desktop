@@ -1,5 +1,6 @@
 import 'package:get_it/get_it.dart';
 import 'package:jellyfin_preference/jellyfin_preference.dart';
+import 'package:playback_core/playback_core.dart';
 import 'package:server_core/server_core.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
@@ -18,8 +19,11 @@ import '../../data/repositories/search_repository.dart';
 import '../../data/repositories/item_mutation_repository.dart';
 import '../../data/services/background_service.dart';
 import '../../data/services/cast/airplay_provider.dart';
+import '../../data/services/cast/airplay_command_bridge.dart';
 import '../../data/services/cast/cast_service.dart';
 import '../../data/services/cast/dlna_provider.dart';
+import '../../data/services/cast/native_airplay_channel.dart';
+import '../../data/services/cast/native_dlna_channel.dart';
 import '../../data/services/cast/google_cast_provider.dart';
 import '../../data/services/cast/native_cast_channel.dart';
 import '../../data/services/cast/remote_session_cast_provider.dart';
@@ -67,12 +71,23 @@ void registerAppModule() {
   _getIt.registerLazySingleton(() => SocketHandler());
   _getIt.registerLazySingleton(() => BackgroundService());
   _getIt.registerLazySingleton(() => const NativeCastChannel());
-  _getIt.registerLazySingleton(() => CastService([
-        RemoteSessionCastProvider(_getIt<MediaServerClientFactory>()),
-        GoogleCastProvider(_getIt<NativeCastChannel>(), _getIt<MediaServerClientFactory>()),
-        AirPlayProvider(_getIt<NativeCastChannel>()),
-        const DlnaProvider(),
-      ]));
+  _getIt.registerLazySingleton(() => const NativeDlnaChannel());
+  _getIt.registerLazySingleton(() => const NativeAirPlayChannel());
+  _getIt.registerLazySingleton(() => AirPlayCommandBridge(
+        _getIt<NativeAirPlayChannel>(),
+        _getIt<PlaybackManager>(),
+      ));
+  _getIt.registerLazySingleton(() => CastService(
+        [
+          RemoteSessionCastProvider(_getIt<MediaServerClientFactory>()),
+          GoogleCastProvider(_getIt<NativeCastChannel>(), _getIt<MediaServerClientFactory>()),
+          AirPlayProvider(_getIt<NativeCastChannel>(), _getIt<NativeAirPlayChannel>(), _getIt<MediaServerClientFactory>()),
+          DlnaProvider(_getIt<NativeDlnaChannel>(), _getIt<MediaServerClientFactory>()),
+        ],
+        nativeCast: _getIt<NativeCastChannel>(),
+        nativeDlna: _getIt<NativeDlnaChannel>(),
+        nativeAirPlay: _getIt<NativeAirPlayChannel>(),
+      ));
   _getIt.registerLazySingleton(() => PluginSyncService(
         _getIt<UserPreferences>(),
         _getIt(),

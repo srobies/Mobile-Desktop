@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'di/providers.dart';
 import 'ui/navigation/app_router.dart';
 import 'ui/theme/app_theme.dart';
+import 'ui/widgets/cast_mini_player.dart';
 import 'ui/widgets/mini_audio_player.dart';
 import 'ui/widgets/offline_banner.dart';
 
@@ -41,6 +42,7 @@ class MoonfinApp extends StatelessWidget {
                 ),
               ),
               if (!hidePlayer) const MiniAudioPlayer(),
+              if (!hidePlayer) const CastMiniPlayer(),
             ],
           );
         },

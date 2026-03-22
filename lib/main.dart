@@ -6,6 +6,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:playback_core/playback_core.dart';
 
 import 'app.dart';
+import 'data/services/cast/airplay_command_bridge.dart';
 import 'data/services/download_notification_service.dart';
 import 'data/services/media_server_client_factory.dart';
 import 'di/injection.dart';
@@ -30,9 +31,7 @@ void main() async {
   final notificationService = GetIt.instance<DownloadNotificationService>();
   try {
     await notificationService.initialize();
-  } catch (error) {
-    debugPrint('DownloadNotificationService init failed: $error');
-  }
+  } catch (_) {}
 
   if (PlatformDetection.isMobile) {
     try {
@@ -40,9 +39,7 @@ void main() async {
         manager: GetIt.instance<PlaybackManager>(),
         clientFactory: GetIt.instance<MediaServerClientFactory>(),
       );
-    } catch (error) {
-      debugPrint('AudioService init failed: $error');
-    }
+    } catch (_) {}
   }
 
   try {
@@ -62,6 +59,10 @@ void main() async {
       PlaybackLifecycleHandler(GetIt.instance<PlaybackManager>()),
     );
   }
+
+  try {
+    GetIt.instance<AirPlayCommandBridge>().start();
+  } catch (_) {}
 
   runApp(const MoonfinApp());
 }

@@ -1803,9 +1803,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
       item: item,
       startPositionTicks: positionTicks,
       audioStreamIndex: _selectedAudioIndex,
-      subtitleStreamIndex: _selectedSubtitleIndex == -1
-          ? null
-          : _selectedSubtitleIndex,
+      subtitleStreamIndex: _selectedSubtitleIndex,
     );
   }
 

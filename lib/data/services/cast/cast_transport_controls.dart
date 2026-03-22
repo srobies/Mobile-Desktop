@@ -10,4 +10,8 @@ abstract class CastTransportControls {
   Future<void> seek(CastTargetKind kind, {required int positionTicks});
 
   Future<void> stop(CastTargetKind kind);
+
+  Future<double?> getVolume(CastTargetKind kind);
+
+  Future<void> setVolume(CastTargetKind kind, {required double volume});
 }

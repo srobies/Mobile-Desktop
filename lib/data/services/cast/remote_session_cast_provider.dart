@@ -5,19 +5,32 @@ import '../../models/aggregated_item.dart';
 import '../media_server_client_factory.dart';
 import 'cast_provider.dart';
 import 'cast_target.dart';
+import 'cast_transport_controls.dart';
 
-class RemoteSessionCastProvider implements CastProvider {
+class RemoteSessionCastProvider implements CastProvider, CastTransportControls {
   final MediaServerClientFactory _clientFactory;
 
-  const RemoteSessionCastProvider(this._clientFactory);
+  String? _activeSessionId;
+  String? _activeServerId;
+
+  RemoteSessionCastProvider(this._clientFactory);
 
   @override
   Set<CastTargetKind> get supportedKinds => {CastTargetKind.jellyfinSession};
+
+  @override
+  Set<CastTargetKind> get controllableKinds => {CastTargetKind.jellyfinSession};
 
   MediaServerClient _clientFor(AggregatedItem item) {
     return _clientFactory.getClientIfExists(item.serverId) ??
         GetIt.instance<MediaServerClient>();
   }
+
+  MediaServerClient get _activeClient =>
+      (_activeServerId != null
+          ? _clientFactory.getClientIfExists(_activeServerId!)
+          : null) ??
+      GetIt.instance<MediaServerClient>();
 
   @override
   Future<List<CastTarget>> discoverTargets(AggregatedItem item) async {
@@ -75,18 +88,65 @@ class RemoteSessionCastProvider implements CastProvider {
   Future<void> playToTarget(
     CastTarget target, {
     required AggregatedItem item,
+    List<AggregatedItem>? queueItems,
     int? startPositionTicks,
     int? audioStreamIndex,
     int? subtitleStreamIndex,
   }) async {
+    _activeSessionId = target.id;
+    _activeServerId = item.serverId;
     final client = _clientFor(item);
+    final itemIds =
+        (queueItems == null || queueItems.isEmpty)
+            ? <String>[item.id]
+            : queueItems.map((entry) => entry.id).toList(growable: false);
     await client.sessionApi.sendPlayCommand(
       target.id,
       playCommand: 'PlayNow',
-      itemIds: [item.id],
+      itemIds: itemIds,
       startPositionTicks: startPositionTicks,
       audioStreamIndex: audioStreamIndex,
       subtitleStreamIndex: subtitleStreamIndex,
     );
   }
+
+  @override
+  Future<void> play(CastTargetKind kind) async {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return;
+    await _activeClient.sessionApi.sendPlayStateCommand(sessionId, 'Unpause');
+  }
+
+  @override
+  Future<void> pause(CastTargetKind kind) async {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return;
+    await _activeClient.sessionApi.sendPlayStateCommand(sessionId, 'Pause');
+  }
+
+  @override
+  Future<void> seek(CastTargetKind kind, {required int positionTicks}) async {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return;
+    await _activeClient.sessionApi.sendPlayStateCommand(
+      sessionId,
+      'Seek',
+      seekPositionTicks: positionTicks,
+    );
+  }
+
+  @override
+  Future<void> stop(CastTargetKind kind) async {
+    final sessionId = _activeSessionId;
+    if (sessionId == null) return;
+    await _activeClient.sessionApi.sendPlayStateCommand(sessionId, 'Stop');
+    _activeSessionId = null;
+    _activeServerId = null;
+  }
+
+  @override
+  Future<double?> getVolume(CastTargetKind kind) async => null;
+
+  @override
+  Future<void> setVolume(CastTargetKind kind, {required double volume}) async {}
 }

@@ -1,35 +1,116 @@
+import 'dart:async';
+
+import 'package:flutter/foundation.dart';
+
 import '../../models/aggregated_item.dart';
 import 'cast_provider.dart';
 import 'cast_target.dart';
 import 'cast_transport_controls.dart';
+import 'native_airplay_channel.dart';
+import 'native_cast_channel.dart';
+import 'native_dlna_channel.dart';
 
 class CastService {
   final List<CastProvider> _providers;
-  CastTargetKind? _activeKind;
+  final ValueNotifier<CastTargetKind?> activeKindNotifier = ValueNotifier(null);
+  final ValueNotifier<CastTarget?> activeTargetNotifier = ValueNotifier(null);
+  final ValueNotifier<AggregatedItem?> castItemNotifier = ValueNotifier(null);
+  final ValueNotifier<String?> remoteStateNotifier = ValueNotifier(null);
+  final ValueNotifier<int> remotePositionNotifier = ValueNotifier(0);
+  final ValueNotifier<double?> remoteVolumeNotifier = ValueNotifier(null);
 
-  CastService(this._providers);
+  CastService(
+    this._providers, {
+    NativeCastChannel? nativeCast,
+    NativeDlnaChannel? nativeDlna,
+    NativeAirPlayChannel? nativeAirPlay,
+  }) {
+    nativeCast?.googleCastEventStream().listen(
+      (e) => _handleNativeEvent(e, 'googleCast', CastTargetKind.googleCast),
+      onError: (_) {},
+    );
+    nativeDlna?.dlnaEventStream().listen(
+      (e) => _handleNativeEvent(e, 'dlna', CastTargetKind.dlna),
+      onError: (_) {},
+    );
+    nativeAirPlay?.airPlayEventStream().listen(
+      (e) => _handleNativeEvent(e, 'airPlay', CastTargetKind.airPlay),
+      onError: (_) {},
+    );
+  }
 
-  CastTargetKind? get activeKind => _activeKind;
+  void _handleNativeEvent(
+    Map<String, dynamic> event,
+    String expectedKind,
+    CastTargetKind castKind,
+  ) {
+    final kind = event['kind'] as String?;
+    if (kind != expectedKind) return;
+    final state = event['state'] as String?;
+    switch (state) {
+      case 'connected':
+        activeKindNotifier.value = castKind;
+        remoteStateNotifier.value = null;
+        if (castKind == CastTargetKind.googleCast || castKind == CastTargetKind.dlna) {
+          _refreshVolume(castKind);
+        }
+      case 'disconnected':
+        if (activeKindNotifier.value == castKind) {
+          activeKindNotifier.value = null;
+          activeTargetNotifier.value = null;
+          castItemNotifier.value = null;
+          remoteStateNotifier.value = null;
+          remotePositionNotifier.value = 0;
+          remoteVolumeNotifier.value = null;
+        }
+      case 'playing' || 'paused' || 'buffering' || 'idle':
+        remoteStateNotifier.value = state;
+        remotePositionNotifier.value = (event['positionTicks'] as int?) ?? 0;
+    }
+  }
+
+  Future<void> _refreshVolume(CastTargetKind kind) async {
+    try {
+      remoteVolumeNotifier.value = await getVolume(kind);
+    } catch (_) {
+      remoteVolumeNotifier.value = null;
+    }
+  }
+
+  CastTargetKind? get activeKind => activeKindNotifier.value;
 
   void setActiveKind(CastTargetKind? kind) {
-    _activeKind = kind;
+    activeKindNotifier.value = kind;
+  }
+
+  Stream<CastTarget> discoverTargetsStreamed(AggregatedItem item) {
+    final controller = StreamController<CastTarget>();
+    int pending = _providers.length;
+    if (pending == 0) {
+      controller.close();
+      return controller.stream;
+    }
+    for (final provider in _providers) {
+      provider.discoverTargets(item).then((targets) {
+        for (final t in targets) {
+          if (!controller.isClosed) controller.add(t);
+        }
+      }).catchError((_) {}).whenComplete(() {
+        pending--;
+        if (pending == 0 && !controller.isClosed) controller.close();
+      });
+    }
+    return controller.stream;
   }
 
   Future<List<CastTarget>> discoverTargets(AggregatedItem item) async {
-    final all = <CastTarget>[];
-    for (final provider in _providers) {
-      try {
-        final targets = await provider.discoverTargets(item);
-        all.addAll(targets);
-      } catch (_) {
-      }
-    }
-    return all;
+    return discoverTargetsStreamed(item).toList();
   }
 
   Future<void> playToTarget(
     CastTarget target, {
     required AggregatedItem item,
+    List<AggregatedItem>? queueItems,
     int? startPositionTicks,
     int? audioStreamIndex,
     int? subtitleStreamIndex,
@@ -41,12 +122,17 @@ class CastService {
     await provider.playToTarget(
       target,
       item: item,
+      queueItems: queueItems,
       startPositionTicks: startPositionTicks,
       audioStreamIndex: audioStreamIndex,
       subtitleStreamIndex: subtitleStreamIndex,
     );
 
-    _activeKind = target.kind;
+    activeKindNotifier.value = target.kind;
+    activeTargetNotifier.value = target;
+    castItemNotifier.value = item;
+    remoteStateNotifier.value = null;
+    remotePositionNotifier.value = startPositionTicks ?? 0;
   }
 
   Future<void> play(CastTargetKind kind) async {
@@ -67,9 +153,24 @@ class CastService {
   Future<void> stop(CastTargetKind kind) async {
     final provider = _controlProviderForKind(kind);
     await provider.stop(kind);
-    if (_activeKind == kind) {
-      _activeKind = null;
+    if (activeKindNotifier.value == kind) {
+      activeKindNotifier.value = null;
+      activeTargetNotifier.value = null;
+      castItemNotifier.value = null;
+      remoteStateNotifier.value = null;
+      remotePositionNotifier.value = 0;
+      remoteVolumeNotifier.value = null;
     }
+  }
+
+  Future<double?> getVolume(CastTargetKind kind) async {
+    final provider = _controlProviderForKind(kind);
+    return provider.getVolume(kind);
+  }
+
+  Future<void> setVolume(CastTargetKind kind, {required double volume}) async {
+    final provider = _controlProviderForKind(kind);
+    await provider.setVolume(kind, volume: volume);
   }
 
   CastTransportControls _controlProviderForKind(CastTargetKind kind) {

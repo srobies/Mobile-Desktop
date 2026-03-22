@@ -1,16 +1,37 @@
+import 'package:get_it/get_it.dart';
+import 'package:playback_core/playback_core.dart';
+import 'package:playback_emby/playback_emby.dart';
+import 'package:playback_jellyfin/playback_jellyfin.dart';
+import 'package:server_core/server_core.dart';
+
 import '../../../util/platform_detection.dart';
 import '../../models/aggregated_item.dart';
+import '../media_server_client_factory.dart';
 import 'cast_provider.dart';
 import 'cast_target.dart';
+import 'cast_transport_controls.dart';
+import 'native_airplay_channel.dart';
 import 'native_cast_channel.dart';
 
-class AirPlayProvider implements CastProvider {
+class AirPlayProvider implements CastProvider, CastTransportControls {
   final NativeCastChannel _native;
+  final NativeAirPlayChannel _nativeAirPlay;
+  final MediaServerClientFactory _clientFactory;
 
-  const AirPlayProvider(this._native);
+  const AirPlayProvider(this._native, this._nativeAirPlay, this._clientFactory);
+
+  MediaStreamResolver _resolverForClient(MediaServerClient client) {
+    return switch (client.serverType) {
+      ServerType.jellyfin => JellyfinPlugin(client).createStreamResolver(),
+      ServerType.emby => EmbyPlugin(client).createStreamResolver(),
+    };
+  }
 
   @override
   Set<CastTargetKind> get supportedKinds => {CastTargetKind.airPlay};
+
+  @override
+  Set<CastTargetKind> get controllableKinds => {CastTargetKind.airPlay};
 
   @override
   Future<List<CastTarget>> discoverTargets(AggregatedItem item) async {
@@ -32,10 +53,75 @@ class AirPlayProvider implements CastProvider {
   Future<void> playToTarget(
     CastTarget target, {
     required AggregatedItem item,
+    List<AggregatedItem>? queueItems,
     int? startPositionTicks,
     int? audioStreamIndex,
     int? subtitleStreamIndex,
   }) async {
+    final client =
+        _clientFactory.getClientIfExists(item.serverId) ?? GetIt.instance<MediaServerClient>();
+    final hasExplicitIndices = audioStreamIndex != null || subtitleStreamIndex != null;
+    final resolution = await _resolverForClient(client).resolve(
+      item,
+      audioStreamIndex: audioStreamIndex,
+      subtitleStreamIndex: subtitleStreamIndex,
+      startTimeTicks: startPositionTicks,
+      enableDirectPlay: !hasExplicitIndices,
+    );
+
+    await _nativeAirPlay.loadAirPlay(
+      url: resolution.streamUrl,
+      title: item.name,
+      positionTicks: startPositionTicks ?? 0,
+    );
+
     await _native.showAirPlayRoutePicker();
+  }
+
+  @override
+  Future<void> play(CastTargetKind kind) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
+    await _nativeAirPlay.playAirPlay();
+  }
+
+  @override
+  Future<void> pause(CastTargetKind kind) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
+    await _nativeAirPlay.pauseAirPlay();
+  }
+
+  @override
+  Future<void> seek(CastTargetKind kind, {required int positionTicks}) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
+    await _nativeAirPlay.seekAirPlay(positionTicks: positionTicks);
+  }
+
+  @override
+  Future<void> stop(CastTargetKind kind) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
+    await _nativeAirPlay.stopAirPlay();
+  }
+
+  @override
+  Future<double?> getVolume(CastTargetKind kind) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
+    return null;
+  }
+
+  @override
+  Future<void> setVolume(CastTargetKind kind, {required double volume}) async {
+    if (kind != CastTargetKind.airPlay) {
+      throw UnsupportedError('Unsupported cast kind for AirPlayProvider.');
+    }
   }
 }

@@ -14,7 +14,9 @@ import '../../../data/models/aggregated_item.dart';
 import '../../../data/models/media_segment.dart';
 import '../../../data/services/cast/cast_service.dart';
 import '../../../data/services/cast/cast_target.dart';
+import '../../../data/services/cast/native_airplay_channel.dart';
 import '../../../data/services/cast/native_cast_channel.dart';
+import '../../../data/services/cast/native_dlna_channel.dart';
 import '../../../data/services/media_segment_service.dart';
 import '../../../data/services/media_server_client_factory.dart';
 import '../../../platform/pip_service.dart';
@@ -40,6 +42,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   final _clientFactory = GetIt.instance<MediaServerClientFactory>();
   final _castService = GetIt.instance<CastService>();
   final _nativeCast = GetIt.instance<NativeCastChannel>();
+  final _nativeDlna = GetIt.instance<NativeDlnaChannel>();
+  final _nativeAirPlay = GetIt.instance<NativeAirPlayChannel>();
   final _pipService = GetIt.instance<PipService>();
   late MediaSegmentService _segmentService;
 
@@ -51,6 +55,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   double _audioDelay = 0.0;
   double _subtitleDelay = 0.0;
   bool _isStopping = false;
+  String? _remotePlaybackState;
+  int _remotePositionTicks = 0;
+  double? _remoteVolume;
+  DateTime? _lastCastErrorAt;
+  String? _lastCastErrorMessage;
   bool _isInPiP = false;
   Duration? _positionBeforeScreenLock;
   StreamSubscription? _screenLockSub;
@@ -67,7 +76,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   StreamSubscription? _pipChangedSub;
   StreamSubscription? _pipActionSub;
   StreamSubscription? _playingSub;
+  StreamSubscription? _bufferingSub;
   StreamSubscription<Map<String, dynamic>>? _castEventsSub;
+  StreamSubscription<Map<String, dynamic>>? _dlnaEventsSub;
+  StreamSubscription<Map<String, dynamic>>? _airPlayEventsSub;
 
   final _overlayFocus = FocusNode();
 
@@ -108,9 +120,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     _positionSub = _state.positionStream.listen(_onPositionUpdate);
     if (PlatformDetection.isAndroid || PlatformDetection.isIOS) {
       _castEventsSub = _nativeCast.googleCastEventStream().listen(
-        _onCastEvent,
+        (e) => _onRemoteEvent(e, expectedKind: 'googleCast', castKind: CastTargetKind.googleCast),
         onError: (_) {},
       );
+      _dlnaEventsSub = _nativeDlna.dlnaEventStream().listen(
+        (e) => _onRemoteEvent(e, expectedKind: 'dlna', castKind: CastTargetKind.dlna),
+        onError: (_) {},
+      );
+      if (PlatformDetection.isIOS) {
+        _airPlayEventsSub = _nativeAirPlay.airPlayEventStream().listen(
+          _onAirPlayEvent,
+          onError: (_) {},
+        );
+      }
     }
     _queueSub = _queue.queueChangedStream.listen((_) {
       _loadSegmentsForCurrentItem();
@@ -126,6 +148,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       _pipActionSub = _pipService.onPiPAction.listen(_onPiPAction);
       _playingSub = _state.playingStream.listen((playing) {
         _pipService.updatePiPActions(isPlaying: playing);
+        _syncAirPlayPlaybackState();
+      });
+      _bufferingSub = _state.bufferingStream.listen((_) {
+        _syncAirPlayPlaybackState();
       });
       _screenLockSub = _pipService.onScreenLock.listen(_onScreenLock);
     }
@@ -140,7 +166,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     _pipChangedSub?.cancel();
     _pipActionSub?.cancel();
     _playingSub?.cancel();
+    _bufferingSub?.cancel();
     _castEventsSub?.cancel();
+    _dlnaEventsSub?.cancel();
+    _airPlayEventsSub?.cancel();
     _screenLockSub?.cancel();
     _overlayFocus.dispose();
     _pipService.enableAutoPiP(false);
@@ -150,34 +179,105 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     super.dispose();
   }
 
-  void _onCastEvent(Map<String, dynamic> event) {
+  void _onAirPlayEvent(Map<String, dynamic> event) {
     final kind = event['kind'] as String?;
-    if (kind != 'googleCast') {
-      return;
-    }
+    if (kind != 'airPlay') return;
+
+    _onRemoteEvent(event, expectedKind: 'airPlay', castKind: CastTargetKind.airPlay);
+  }
+
+  void _onRemoteEvent(
+    Map<String, dynamic> event, {
+    required String expectedKind,
+    required CastTargetKind castKind,
+  }) {
+    final kind = event['kind'] as String?;
+    if (kind != expectedKind) return;
 
     final state = event['state'] as String?;
-    if (state == 'connected') {
-      _castService.setActiveKind(CastTargetKind.googleCast);
-      if (mounted) {
-        setState(() {});
-      }
+    switch (state) {
+      case 'connected':
+        _castService.setActiveKind(castKind);
+        _castService.remoteStateNotifier.value = null;
+        if (castKind == CastTargetKind.googleCast || castKind == CastTargetKind.dlna) {
+          _refreshRemoteVolume();
+        }
+        if (castKind == CastTargetKind.airPlay) {
+          _syncAirPlayPlaybackState();
+        }
+      case 'disconnected':
+        if (_castService.activeKind == castKind) {
+          _castService.setActiveKind(null);
+          _castService.remoteStateNotifier.value = null;
+          _castService.remotePositionNotifier.value = 0;
+          _castService.remoteVolumeNotifier.value = null;
+          _remotePlaybackState = null;
+          _remotePositionTicks = 0;
+          _remoteVolume = null;
+        }
+      case 'playing' || 'paused' || 'buffering' || 'idle':
+        final positionTicks = (event['positionTicks'] as int?) ?? 0;
+        _castService.remoteStateNotifier.value = state;
+        _castService.remotePositionNotifier.value = positionTicks;
+        if (mounted) {
+          setState(() {
+            _remotePlaybackState = state;
+            _remotePositionTicks = positionTicks;
+          });
+        }
+      case 'error':
+        if (mounted) {
+          final protocolLabel = castKind == CastTargetKind.googleCast ? 'Google Cast' : 'DLNA';
+          final message = event['message'] as String? ?? '$protocolLabel session error';
+          _showThrottledCastError(message);
+        }
+    }
+  }
+
+  void _showThrottledCastError(String message) {
+    final now = DateTime.now();
+    final lastAt = _lastCastErrorAt;
+    final repeated = _lastCastErrorMessage == message;
+    if (repeated && lastAt != null && now.difference(lastAt) < const Duration(seconds: 3)) {
       return;
     }
+    _lastCastErrorAt = now;
+    _lastCastErrorMessage = message;
+    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
+  }
 
-    if (state == 'disconnected') {
-      _castService.setActiveKind(null);
-      if (mounted) {
-        setState(() {});
-      }
-      return;
+  Future<void> _refreshRemoteVolume() async {
+    final kind = _castService.activeKind;
+    if (kind == null || !mounted) return;
+
+    try {
+      final volume = await _castService.getVolume(kind);
+      if (!mounted) return;
+      _castService.remoteVolumeNotifier.value = volume;
+      setState(() {
+        _remoteVolume = volume;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      _castService.remoteVolumeNotifier.value = null;
+      setState(() {
+        _remoteVolume = null;
+      });
     }
+  }
 
-    if (state == 'error' && mounted) {
-      final message = event['message'] as String? ?? 'Google Cast session error';
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(message)),
-      );
+  Future<void> _setRemoteVolume(double volume) async {
+    final kind = _castService.activeKind;
+    if (kind == null || !mounted) return;
+    _castService.remoteVolumeNotifier.value = volume;
+    setState(() {
+      _remoteVolume = volume;
+    });
+    try {
+      await _castService.setVolume(kind, volume: volume);
+    } catch (e) {
+      if (!mounted) return;
+      _showThrottledCastError('Failed to set cast volume: $e');
     }
   }
 
@@ -250,8 +350,25 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
 
   void _onPositionUpdate(Duration position) {
     if (!mounted || _isSeeking || _isRestoringPosition) return;
+    _syncAirPlayPlaybackState(position: position);
     _checkSegments(position);
     _checkNextUp(position);
+  }
+
+  void _syncAirPlayPlaybackState({Duration? position}) {
+    if (_castService.activeKind != CastTargetKind.airPlay) return;
+    final pos = position ?? _state.position;
+    final ticks = pos.inMicroseconds * 10;
+    _nativeAirPlay
+        .updateAirPlayPlaybackState(
+          isPlaying: _state.isPlaying,
+          isBuffering: _state.isBuffering,
+          positionTicks: ticks,
+        )
+        .catchError((_) {});
+    _castService.remotePositionNotifier.value = ticks;
+    _castService.remoteStateNotifier.value =
+        _state.isBuffering ? 'buffering' : (_state.isPlaying ? 'playing' : 'paused');
   }
 
   void _checkSegments(Duration position) {
@@ -505,6 +622,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
                   _buildTopOverlay(context),
                   _buildBottomOverlay(context),
                 ],
+                _buildCastMiniBar(),
                 _buildBufferingIndicator(),
                 if (_skipSegment != null)
                   SkipSegmentOverlay(
@@ -693,6 +811,63 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     );
   }
 
+  Widget _buildCastMiniBar() {
+    return ValueListenableBuilder<CastTargetKind?>(
+      valueListenable: _castService.activeKindNotifier,
+      builder: (context, kind, _) {
+        if (kind == null) return const SizedBox.shrink();
+
+        final label = switch (kind) {
+          CastTargetKind.googleCast => 'Casting to Google Cast',
+          CastTargetKind.airPlay => 'Casting via AirPlay',
+          CastTargetKind.dlna => 'Casting via DLNA',
+          CastTargetKind.jellyfinSession => 'Remote Playback',
+        };
+
+        final stateLabel = _remotePlaybackState == null
+            ? ''
+            : ' · ${_remotePlaybackState![0].toUpperCase()}${_remotePlaybackState!.substring(1)}';
+        final positionLabel = _remotePositionTicks > 0
+            ? ' · ${_formatDuration(Duration(microseconds: _remotePositionTicks ~/ 10))}'
+            : '';
+
+        return Positioned(
+          top: MediaQuery.of(context).padding.top + 8,
+          right: 12,
+          child: Material(
+            color: Colors.transparent,
+            child: InkWell(
+              onTap: _showCastControls,
+              borderRadius: BorderRadius.circular(999),
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                decoration: BoxDecoration(
+                  color: const Color(0xFF1B5E20).withValues(alpha: 0.94),
+                  borderRadius: BorderRadius.circular(999),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    const Icon(Icons.cast_connected, color: Colors.white, size: 16),
+                    const SizedBox(width: 8),
+                    Text(
+                      '$label$stateLabel$positionLabel',
+                      style: const TextStyle(
+                        color: Colors.white,
+                        fontSize: AppTypography.fontSizeXs,
+                        fontWeight: FontWeight.w600,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
   Widget _buildBottomOverlay(BuildContext context) {
     final padding = MediaQuery.of(context).padding;
     return Positioned(
@@ -809,7 +984,6 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     final item = _queue.currentItem;
     final hasChapters = item is AggregatedItem && item.chapters.isNotEmpty;
     final hasCast = item is AggregatedItem && item.people.isNotEmpty;
-    final hasGoogleCastSession = _castService.activeKind == CastTargetKind.googleCast;
 
     return StreamBuilder<bool>(
       stream: _state.playingStream,
@@ -882,11 +1056,20 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
             Icons.cast,
             onPressed: _castToDevice,
           ),
-          if (hasGoogleCastSession)
-            _controlButton(
-              Icons.cast_connected,
-              onPressed: _showGoogleCastControls,
-            ),
+          ValueListenableBuilder<CastTargetKind?>(
+            valueListenable: _castService.activeKindNotifier,
+            builder: (context, kind, _) {
+              if (kind == null) return const SizedBox.shrink();
+              return _controlButton(
+                switch (kind) {
+                  CastTargetKind.googleCast => Icons.cast_connected,
+                  CastTargetKind.airPlay => Icons.airplay,
+                  _ => Icons.router,
+                },
+                onPressed: _showCastControls,
+              );
+            },
+          ),
           if (_manager.currentResolution?.playMethod == StreamPlayMethod.transcode)
             _buildBitrateButton(),
           _buildZoomButton(),
@@ -1258,10 +1441,19 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     final item = _queue.currentItem;
     if (item is! AggregatedItem) return;
     final positionTicks = _state.position.inMicroseconds * 10;
+    final startIndex = _queue.currentIndex < 0 ? 0 : _queue.currentIndex;
+    final queueItems =
+        _queue.items
+            .skip(startIndex)
+            .whereType<AggregatedItem>()
+            .toList(growable: false);
     await showRemotePlayToSessionDialog(
       context,
       item: item,
+      queueItems: queueItems.length > 1 ? queueItems : null,
       startPositionTicks: positionTicks,
+      audioStreamIndex: _manager.audioStreamIndex,
+      subtitleStreamIndex: _manager.subtitleStreamIndex,
     );
     if (mounted) {
       setState(() {});
@@ -1269,7 +1461,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     _showControls();
   }
 
-  void _showGoogleCastControls() {
+  void _showCastControls() {
+    final kind = _castService.activeKind;
+    if (kind == null) return;
+
+    _refreshRemoteVolume();
+
+    final label = switch (kind) {
+      CastTargetKind.googleCast => 'Google Cast',
+      CastTargetKind.airPlay => 'AirPlay',
+      CastTargetKind.dlna => 'DLNA',
+      _ => 'Cast',
+    };
+
+    final isAirPlay = kind == CastTargetKind.airPlay;
+
     showModalBottomSheet(
       context: context,
       backgroundColor: AppColorScheme.surface,
@@ -1277,18 +1483,57 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const ListTile(
+            ListTile(
               title: Text(
-                'Google Cast Controls',
-                style: TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
+                '$label Controls',
+                style: const TextStyle(color: Colors.white, fontWeight: FontWeight.w600),
               ),
+              subtitle: _remotePlaybackState != null
+                  ? Text(
+                      '${_remotePlaybackState![0].toUpperCase()}${_remotePlaybackState!.substring(1)}'
+                      ' · ${_formatDuration(Duration(microseconds: _remotePositionTicks ~/ 10))}',
+                      style: const TextStyle(color: Colors.white54),
+                    )
+                  : null,
             ),
+              if (kind == CastTargetKind.googleCast || kind == CastTargetKind.dlna)
+                ListTile(
+                  leading: const Icon(Icons.volume_up_rounded, color: Colors.white),
+                  title: const Text('Device Volume', style: TextStyle(color: Colors.white)),
+                  subtitle: _remoteVolume == null
+                      ? const Text('Unavailable', style: TextStyle(color: Colors.white54))
+                      : SliderTheme(
+                          data: SliderTheme.of(context).copyWith(
+                            activeTrackColor: AppColorScheme.accent,
+                            inactiveTrackColor: Colors.white24,
+                            thumbColor: Colors.white,
+                            overlayColor: Colors.white24,
+                          ),
+                          child: Slider(
+                            value: _remoteVolume!.clamp(0.0, 1.0),
+                            min: 0,
+                            max: 1,
+                            onChanged: (value) => _setRemoteVolume(value),
+                          ),
+                        ),
+                  trailing: _remoteVolume == null
+                      ? null
+                      : Text(
+                          '${(_remoteVolume! * 100).round()}%',
+                          style: const TextStyle(color: Colors.white70),
+                        ),
+                ),
             ListTile(
               leading: const Icon(Icons.play_arrow_rounded, color: Colors.white),
               title: const Text('Play', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _runGoogleCastAction((kind) => _castService.play(kind));
+                if (isAirPlay) {
+                  _manager.resume();
+                  _syncAirPlayPlaybackState();
+                  return;
+                }
+                _runCastAction((k) => _castService.play(k));
               },
             ),
             ListTile(
@@ -1296,7 +1541,12 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
               title: const Text('Pause', style: TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _runGoogleCastAction((kind) => _castService.pause(kind));
+                if (isAirPlay) {
+                  _manager.pause();
+                  _syncAirPlayPlaybackState();
+                  return;
+                }
+                _runCastAction((k) => _castService.pause(k));
               },
             ),
             ListTile(
@@ -1305,17 +1555,21 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
               onTap: () {
                 Navigator.of(ctx).pop();
                 final positionTicks = _state.position.inMicroseconds * 10;
-                _runGoogleCastAction(
-                  (kind) => _castService.seek(kind, positionTicks: positionTicks),
+                _runCastAction(
+                  (k) => _castService.seek(k, positionTicks: positionTicks),
                 );
               },
             ),
             ListTile(
               leading: const Icon(Icons.stop_rounded, color: Colors.white),
-              title: const Text('Stop Casting', style: TextStyle(color: Colors.white)),
+              title: Text('Stop $label', style: const TextStyle(color: Colors.white)),
               onTap: () {
                 Navigator.of(ctx).pop();
-                _runGoogleCastAction((kind) => _castService.stop(kind));
+                if (isAirPlay) {
+                  _exitPlayback();
+                } else {
+                  _runCastAction((k) => _castService.stop(k));
+                }
               },
             ),
           ],
@@ -1324,24 +1578,23 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     );
   }
 
-  Future<void> _runGoogleCastAction(
+  Future<void> _runCastAction(
     Future<void> Function(CastTargetKind kind) action,
   ) async {
     final kind = _castService.activeKind;
-    if (kind != CastTargetKind.googleCast || !mounted) {
-      return;
-    }
+    if (kind == null || !mounted) return;
 
-    final messenger = ScaffoldMessenger.of(context);
     try {
-      await action(CastTargetKind.googleCast);
-      if (!mounted) return;
-      setState(() {});
+      await action(kind);
     } catch (e) {
       if (!mounted) return;
-      messenger.showSnackBar(
-        SnackBar(content: Text('Google Cast action failed: $e')),
-      );
+      final label = switch (kind) {
+        CastTargetKind.googleCast => 'Google Cast',
+        CastTargetKind.airPlay => 'AirPlay',
+        CastTargetKind.dlna => 'DLNA',
+        _ => 'Cast',
+      };
+      _showThrottledCastError('$label action failed: $e');
     }
   }
 

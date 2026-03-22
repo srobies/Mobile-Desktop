@@ -37,6 +37,7 @@ class NativeCastChannel {
     required String title,
     String? subtitle,
     String? posterUrl,
+    List<Map<String, dynamic>>? queueItems,
     int? startPositionTicks,
   }) async {
     await _channel.invokeMethod<void>('startGoogleCastSession', {
@@ -45,6 +46,7 @@ class NativeCastChannel {
       'title': title,
       if (subtitle != null) 'subtitle': subtitle,
       if (posterUrl != null) 'posterUrl': posterUrl,
+      if (queueItems != null) 'queueItems': queueItems,
       if (startPositionTicks != null) 'startPositionTicks': startPositionTicks,
     });
   }
@@ -69,6 +71,16 @@ class NativeCastChannel {
 
   Future<void> stopGoogleCastSession() async {
     await _channel.invokeMethod<void>('stopGoogleCastSession');
+  }
+
+  Future<double?> getGoogleCastVolume() async {
+    return _channel.invokeMethod<double>('getGoogleCastVolume');
+  }
+
+  Future<void> setGoogleCastVolume({required double volume}) async {
+    await _channel.invokeMethod<void>('setGoogleCastVolume', {
+      'volume': volume,
+    });
   }
 
   Stream<Map<String, dynamic>> googleCastEventStream() {

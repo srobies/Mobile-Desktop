@@ -9,6 +9,7 @@ abstract class CastProvider {
   Future<void> playToTarget(
     CastTarget target, {
     required AggregatedItem item,
+    List<AggregatedItem>? queueItems,
     int? startPositionTicks,
     int? audioStreamIndex,
     int? subtitleStreamIndex,
