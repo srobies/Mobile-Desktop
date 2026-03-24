@@ -513,7 +513,14 @@ class _ContentRowsState extends State<_ContentRows>
       platform.setProperty('network-timeout', '30');
     }
     _previewPlayer = player;
-    _previewController = VideoController(player);
+    _previewController = VideoController(
+      player,
+      configuration: VideoControllerConfiguration(
+        hwdec: PlatformDetection.isLinux && !PlatformDetection.isLinuxWayland
+            ? 'no'
+            : null,
+      ),
+    );
     return player;
   }
 

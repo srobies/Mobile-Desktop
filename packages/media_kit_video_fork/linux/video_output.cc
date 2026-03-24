@@ -100,6 +100,14 @@ VideoOutput* video_output_new(FlTextureRegistrar* texture_registrar,
 #endif
   mpv_set_option_string(self->handle, "video-sync", "audio");
   mpv_set_option_string(self->handle, "video-timing-offset", "0");
+#ifdef MPV_RENDER_API_TYPE_SW
+  if (self->configuration.enable_hardware_acceleration) {
+    GdkDisplay* display = gdk_display_get_default();
+    if (GDK_IS_X11_DISPLAY(display)) {
+      self->configuration.enable_hardware_acceleration = FALSE;
+    }
+  }
+#endif
   gboolean hardware_acceleration_supported = FALSE;
   if (self->configuration.enable_hardware_acceleration) {
     GError* error = NULL;
