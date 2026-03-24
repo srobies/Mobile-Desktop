@@ -12,12 +12,22 @@ class MediaKitPlayerBackend implements PlayerBackend {
   final Player _player;
   final VideoController _videoController;
   final UserPreferences _prefs;
+  final Future<void> Function(int handle)? _onNativeHandleReady;
+  bool _didNotifyNativeHandle = false;
 
   static bool get _useLibass => PlatformDetection.isDesktop;
 
-  MediaKitPlayerBackend._(this._player, this._videoController, this._prefs);
+  MediaKitPlayerBackend._(
+    this._player,
+    this._videoController,
+    this._prefs,
+    this._onNativeHandleReady,
+  );
 
-  factory MediaKitPlayerBackend(UserPreferences prefs) {
+  factory MediaKitPlayerBackend(
+    UserPreferences prefs, {
+    Future<void> Function(int handle)? onNativeHandleReady,
+  }) {
     final player = Player(
       configuration: PlayerConfiguration(
         libass: _useLibass,
@@ -28,7 +38,12 @@ class MediaKitPlayerBackend implements PlayerBackend {
       platform.setProperty('network-timeout', '120');
     }
     final controller = VideoController(player);
-    return MediaKitPlayerBackend._(player, controller, prefs);
+    return MediaKitPlayerBackend._(
+      player,
+      controller,
+      prefs,
+      onNativeHandleReady,
+    );
   }
 
   @override
@@ -54,10 +69,26 @@ class MediaKitPlayerBackend implements PlayerBackend {
   @override
   Future<void> play(dynamic mediaItem) async {
     final url = mediaItem as String;
+    await _notifyNativeHandleReady();
     _player.open(Media(url));
     if (!_useLibass) {
       _enableNativeSubtitleRendering();
     }
+  }
+
+  Future<void> _notifyNativeHandleReady() async {
+    final onNativeHandleReady = _onNativeHandleReady;
+    if (_didNotifyNativeHandle || onNativeHandleReady == null) {
+      return;
+    }
+    if (_player.platform is! NativePlayer) {
+      return;
+    }
+    try {
+      final handle = await _player.handle;
+      await onNativeHandleReady(handle);
+      _didNotifyNativeHandle = true;
+    } catch (_) {}
   }
 
   @override

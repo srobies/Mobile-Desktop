@@ -16,7 +16,13 @@ import '../../preference/user_preferences.dart';
 final _getIt = GetIt.instance;
 
 void registerPlaybackModule() {
-  final backend = MediaKitPlayerBackend(_getIt<UserPreferences>());
+  final pipService = PipService();
+  _getIt.registerSingleton<PipService>(pipService);
+
+  final backend = MediaKitPlayerBackend(
+    _getIt<UserPreferences>(),
+    onNativeHandleReady: pipService.initializeIos,
+  );
   _getIt.registerSingleton<MediaKitPlayerBackend>(backend);
   _getIt.registerSingleton<PlayerBackend>(backend);
 
@@ -24,8 +30,6 @@ void registerPlaybackModule() {
   manager.setBackend(backend);
   manager.setResolverConfigurator(_ensureResolverForItem);
   _getIt.registerSingleton<PlaybackManager>(manager);
-
-  _getIt.registerSingleton<PipService>(PipService());
 
   _getIt.registerLazySingleton<OfflineStreamResolver>(
     () => OfflineStreamResolver(_getIt<OfflineRepository>()),

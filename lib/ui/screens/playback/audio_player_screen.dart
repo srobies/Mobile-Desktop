@@ -4,7 +4,7 @@ import 'dart:io';
 import 'dart:ui';
 
 import 'package:cached_network_image/cached_network_image.dart';
-import 'package:flutter/material.dart';
+import 'package:flutter/material.dart' hide RepeatMode;
 import 'package:get_it/get_it.dart';
 import 'package:jellyfin_design/jellyfin_design.dart';
 import 'package:playback_core/playback_core.dart';

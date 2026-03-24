@@ -4,11 +4,38 @@ import 'package:flutter/services.dart';
 
 import '../util/platform_detection.dart';
 
+class IosSharedContextBridgeConfig {
+  final String frameEventChannel;
+
+  const IosSharedContextBridgeConfig({
+    required this.frameEventChannel,
+  });
+
+  Map<String, dynamic> toJson() {
+    return {
+      'frameEventChannel': frameEventChannel,
+    };
+  }
+}
+
 class PipService {
-  static const _channel = MethodChannel('org.moonfin.androidtv/pip');
+  static const _androidChannel = MethodChannel('org.moonfin.androidtv/pip');
+  static const _iosChannel = MethodChannel('org.moonfin.ios/pip');
+  static const _iosSharedContextBridge = IosSharedContextBridgeConfig(
+    frameEventChannel: 'org.moonfin.ios/pip_shared_frames',
+  );
+
+  MethodChannel? get _activeChannel {
+    if (PlatformDetection.isAndroid) return _androidChannel;
+    if (PlatformDetection.isIOS) return _iosChannel;
+    return null;
+  }
 
   bool _isInPiP = false;
   bool get isInPiP => _isInPiP;
+
+  bool _didConfigureIosBackend = false;
+  bool _isIosPiPInitialized = false;
 
   bool _isScreenLocked = false;
   bool get isScreenLocked => _isScreenLocked;
@@ -23,8 +50,9 @@ class PipService {
   Stream<bool> get onScreenLock => _screenLockController.stream;
 
   PipService() {
-    if (PlatformDetection.isAndroid) {
-      _channel.setMethodCallHandler(_handleMethod);
+    final channel = _activeChannel;
+    if (channel != null) {
+      channel.setMethodCallHandler(_handleMethod);
     }
   }
 
@@ -42,17 +70,61 @@ class PipService {
   }
 
   Future<void> enableAutoPiP(bool enabled) async {
-    if (!PlatformDetection.isAndroid) return;
+    final channel = _activeChannel;
+    if (channel == null) return;
     try {
-      await _channel.invokeMethod('enableAutoPiP', {'enabled': enabled});
+      if (PlatformDetection.isAndroid) {
+        await channel.invokeMethod('enableAutoPiP', {'enabled': enabled});
+      } else if (PlatformDetection.isIOS && !enabled) {
+        await channel.invokeMethod('dismissPiP');
+      }
     } catch (_) {}
   }
 
-  Future<void> updatePiPActions({required bool isPlaying}) async {
-    if (!PlatformDetection.isAndroid || !_isInPiP) return;
+  Future<void> initializeIos(int handle) async {
+    if (!PlatformDetection.isIOS) return;
     try {
-      await _channel
-          .invokeMethod('updatePiPActions', {'isPlaying': isPlaying});
+      await _ensureIosBackendConfigured();
+      await _iosChannel.invokeMethod('initialize', {'handle': handle});
+      _isIosPiPInitialized = true;
+    } on PlatformException {
+      _isIosPiPInitialized = false;
+      rethrow;
+    }
+  }
+
+  Future<void> _ensureIosBackendConfigured() async {
+    if (_didConfigureIosBackend) return;
+    await _iosChannel.invokeMethod(
+      'configureSharedContextBridge',
+      _iosSharedContextBridge.toJson(),
+    );
+    _didConfigureIosBackend = true;
+  }
+
+  Future<bool> startIosPiP() async {
+    if (!PlatformDetection.isIOS) return false;
+    if (!_isIosPiPInitialized) {
+      return false;
+    }
+    try {
+      await _iosChannel.invokeMethod('startPiP');
+      return true;
+    } catch (_) {
+      return false;
+    }
+  }
+
+  Future<void> updatePiPActions({required bool isPlaying}) async {
+    if (PlatformDetection.isAndroid && !_isInPiP) return;
+    try {
+      final channel = _activeChannel;
+      if (channel == null) return;
+      if (PlatformDetection.isAndroid) {
+        await channel.invokeMethod('updatePiPActions', {'isPlaying': isPlaying});
+      } else if (PlatformDetection.isIOS) {
+        await channel.invokeMethod('updatePlaybackState', {'isPlaying': isPlaying});
+      }
     } catch (_) {}
   }
 

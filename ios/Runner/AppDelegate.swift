@@ -63,6 +63,9 @@ private final class NativeAirPlayEventStreamHandler: NSObject, FlutterStreamHand
   fileprivate let airPlayController = AirPlayController()
   fileprivate var castEventSink: FlutterEventSink?
 
+  private var pipChannel: FlutterMethodChannel?
+  private var pipController: NSObject?
+
   private struct PendingCastRequest {
     let targetId: String
     let streamUrl: URL
@@ -87,6 +90,103 @@ private final class NativeAirPlayEventStreamHandler: NSObject, FlutterStreamHand
       name: "com.moonfin/ios_storage",
       binaryMessenger: controller.binaryMessenger
     )
+
+      let pipChannel = FlutterMethodChannel(
+        name: "org.moonfin.ios/pip",
+        binaryMessenger: controller.binaryMessenger
+      )
+      self.pipChannel = pipChannel
+
+      if #available(iOS 15.0, *) {
+        let pip = PiPController()
+        self.pipController = pip
+        pip.onPiPStatusChanged = { [weak pipChannel] isInPiP in
+          DispatchQueue.main.async {
+            pipChannel?.invokeMethod("onPiPChanged", arguments: isInPiP)
+          }
+        }
+        pip.onPiPAction = { [weak pipChannel] action in
+          DispatchQueue.main.async {
+            pipChannel?.invokeMethod("onPiPAction", arguments: action)
+          }
+        }
+      }
+
+      pipChannel.setMethodCallHandler { [weak self, weak controller] (call, result) in
+        guard let self else { result(FlutterMethodNotImplemented); return }
+
+        if #available(iOS 15.0, *), let pip = self.pipController as? PiPController {
+          switch call.method {
+          case "configureSharedContextBridge":
+            guard let args = call.arguments as? [String: Any] else {
+              result(FlutterError(code: "BAD_ARGS", message: "Missing bridge arguments", details: nil))
+              return
+            }
+            let configured = pip.configureSharedContextBridge(arguments: args)
+            if configured {
+              result(nil)
+            } else {
+              result(
+                FlutterError(
+                  code: "PIP_SHARED_BRIDGE_CONFIG_FAILED",
+                  message: pip.lastErrorMessage ?? "Failed to configure shared-context PiP bridge",
+                  details: nil
+                )
+              )
+            }
+          case "initialize":
+            guard let args = call.arguments as? [String: Any],
+                  let handle = (args["handle"] as? NSNumber)?.int64Value else {
+              result(FlutterError(code: "BAD_ARGS", message: "Missing handle", details: nil))
+              return
+            }
+            let initialized = pip.initialize(mpvHandleAddress: handle, viewController: controller)
+            if initialized {
+              result(nil)
+            } else {
+              result(
+                FlutterError(
+                  code: "PIP_INIT_FAILED",
+                  message: pip.lastErrorMessage ?? "Failed to initialize iOS PiP",
+                  details: nil
+                )
+              )
+            }
+          case "startPiP":
+            guard let vc = controller else {
+              result(FlutterError(code: "NO_VIEW_CONTROLLER", message: "Missing root view controller", details: nil))
+              return
+            }
+            let started = pip.startPiP(on: vc)
+            if started {
+              result(nil)
+            } else {
+              result(
+                FlutterError(
+                  code: "PIP_START_FAILED",
+                  message: pip.lastErrorMessage ?? "Failed to start iOS PiP",
+                  details: nil
+                )
+              )
+            }
+          case "stopPiP":
+            pip.stopPiP()
+            result(nil)
+          case "dismissPiP":
+            pip.dismissPiP()
+            result(nil)
+          case "updatePlaybackState":
+            let isPlaying = (call.arguments as? [String: Any])?["isPlaying"] as? Bool ?? true
+            pip.updatePlaybackState(isPlaying: isPlaying)
+            result(nil)
+          default:
+            result(FlutterMethodNotImplemented)
+          }
+        } else {
+          result(FlutterError(code: "UNAVAILABLE", message: "PiP requires iOS 15+", details: nil))
+        }
+      }
+
     let castChannel = FlutterMethodChannel(
       name: "com.moonfin/native_cast",
       binaryMessenger: controller.binaryMessenger

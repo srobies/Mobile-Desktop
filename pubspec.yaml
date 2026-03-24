@@ -35,7 +35,8 @@ dependencies:
 
   # Media Playback
   media_kit: ^1.1.11
-  media_kit_video: ^1.2.5
+  media_kit_video:
+    path: packages/media_kit_video_fork
   media_kit_libs_video: ^1.0.5
 
   # Image Loading
@@ -81,7 +82,7 @@ dependencies:
   jellyfin_preference:
     path: packages/preference
   url_launcher: ^6.3.2
-  file_picker: ^8.1.7
+  file_picker: ^10.3.10
   webview_flutter: ^4.10.0
   pdfrx: ^1.0.0
   flutter_widget_from_html_core: ^0.16.0

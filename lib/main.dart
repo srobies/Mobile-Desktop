@@ -57,14 +57,19 @@ void main() async {
 
   try {
     final session = await AudioSession.instance;
-    await session.configure(const AudioSessionConfiguration(
+    final iosCategoryOptions =
+        AVAudioSessionCategoryOptions.allowAirPlay |
+        AVAudioSessionCategoryOptions.allowBluetooth |
+        AVAudioSessionCategoryOptions.allowBluetoothA2dp;
+    await session.configure(AudioSessionConfiguration(
       avAudioSessionCategory: AVAudioSessionCategory.playback,
-      avAudioSessionCategoryOptions: AVAudioSessionCategoryOptions.duckOthers,
+      avAudioSessionCategoryOptions: iosCategoryOptions,
       androidAudioAttributes: AndroidAudioAttributes(
         contentType: AndroidAudioContentType.music,
         usage: AndroidAudioUsage.media,
       ),
     ));
+    await session.setActive(true);
   } catch (_) {}
 
   if (!GetIt.instance.isRegistered<PlaybackLifecycleHandler>()) {

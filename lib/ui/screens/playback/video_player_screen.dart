@@ -61,6 +61,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   DateTime? _lastCastErrorAt;
   String? _lastCastErrorMessage;
   bool _isInPiP = false;
+  bool _didRequestIosPiPForBackground = false;
+  bool _isStartingIosPiPForBackground = false;
   Duration? _positionBeforeScreenLock;
   StreamSubscription? _screenLockSub;
   bool _isRestoringPosition = false;
@@ -142,17 +144,22 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
       _consecutiveEpisodes++;
     });
 
-    if (PlatformDetection.isAndroid) {
-      _pipService.enableAutoPiP(true);
+    if (PlatformDetection.isAndroid || PlatformDetection.isIOS) {
       _pipChangedSub = _pipService.onPiPChanged.listen(_onPiPChanged);
       _pipActionSub = _pipService.onPiPAction.listen(_onPiPAction);
       _playingSub = _state.playingStream.listen((playing) {
         _pipService.updatePiPActions(isPlaying: playing);
         _syncAirPlayPlaybackState();
       });
-      _bufferingSub = _state.bufferingStream.listen((_) {
-        _syncAirPlayPlaybackState();
-      });
+      if (PlatformDetection.isAndroid) {
+        _pipService.enableAutoPiP(true);
+        _bufferingSub = _state.bufferingStream.listen((_) {
+          _syncAirPlayPlaybackState();
+        });
+      }
+    }
+
+    if (PlatformDetection.isAndroid) {
       _screenLockSub = _pipService.onScreenLock.listen(_onScreenLock);
     }
   }
@@ -284,14 +291,50 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   @override
   void didChangeAppLifecycleState(AppLifecycleState lifecycleState) {
     switch (lifecycleState) {
+      case AppLifecycleState.inactive:
+        if (PlatformDetection.isIOS) {
+          _tryStartIosPiPForBackground();
+          return;
+        }
       case AppLifecycleState.hidden:
+        if (PlatformDetection.isIOS) {
+          _tryStartIosPiPForBackground();
+          return;
+        }
         if (_isInPiP || _isStopping || _pipService.isScreenLocked) return;
         _backend.setVideoEnabled(false);
       case AppLifecycleState.resumed:
+        _didRequestIosPiPForBackground = false;
+        if (PlatformDetection.isIOS && _isInPiP) {
+          _pipService.enableAutoPiP(false);
+        }
         _backend.setVideoEnabled(true);
         _restorePositionAfterScreenLock();
       default:
         break;
+    }
+  }
+
+  void _tryStartIosPiPForBackground() {
+    if (_didRequestIosPiPForBackground) return;
+    if (_isStartingIosPiPForBackground) return;
+    if (_isInPiP || _isStopping || _pipService.isScreenLocked) return;
+    _didRequestIosPiPForBackground = true;
+    _isStartingIosPiPForBackground = true;
+    unawaited(_startIosPiPForBackground());
+  }
+
+  Future<void> _startIosPiPForBackground() async {
+    try {
+      await _pipService.startIosPiP();
+
+      // Re-arm if PiP hasn't started after the method channel returned.
+      await Future<void>.delayed(const Duration(milliseconds: 220));
+      if (mounted && !_isInPiP) {
+        _didRequestIosPiPForBackground = false;
+      }
+    } finally {
+      _isStartingIosPiPForBackground = false;
     }
   }
 
@@ -323,6 +366,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     if (!mounted) return;
     setState(() => _isInPiP = isInPiP);
     if (!isInPiP) {
+      _didRequestIosPiPForBackground = false;
       SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
     }
   }
@@ -335,6 +379,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         } else {
           _manager.resume();
         }
+      case 'play':
+        _manager.resume();
+      case 'pause':
+        _manager.pause();
       case 'dismissed':
         _exitPlayback();
     }
@@ -671,7 +719,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         height: size.height,
         fit: _zoomToFit(_zoomMode),
         fill: Colors.black,
-        pauseUponEnteringBackgroundMode: true,
+        // Disabled on iOS: we manage background playback via PiP.
+        pauseUponEnteringBackgroundMode: !PlatformDetection.isIOS,
         subtitleViewConfiguration: _buildSubtitleConfig(),
       ),
     );
