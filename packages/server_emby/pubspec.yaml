@@ -4,10 +4,10 @@ publish_to: 'none'
 version: 0.1.0
 
 environment:
-  sdk: ^3.7.2
+  sdk: ^3.11.0
 
 dependencies:
   server_core:
     path: ../server_core
-  dio: ^5.7.0
-  logger: ^2.5.0
+  dio: ^5.9.2
+  logger: ^2.6.2
