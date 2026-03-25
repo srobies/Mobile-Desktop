@@ -1,9 +1,11 @@
 import 'package:flutter/material.dart';
+import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
+import '../../../../preference/user_preferences.dart';
 import '../../../navigation/destinations.dart';
 
-class AdminDrawer extends StatelessWidget {
+class AdminDrawer extends StatefulWidget {
   final String currentPath;
   final bool isEmbedded;
 
@@ -14,68 +16,98 @@ class AdminDrawer extends StatelessWidget {
   });
 
   @override
+  State<AdminDrawer> createState() => _AdminDrawerState();
+}
+
+class _AdminDrawerState extends State<AdminDrawer> {
+  final _prefs = GetIt.instance<UserPreferences>();
+  late List<_AdminNavEntry> _entries;
+
+  @override
+  void initState() {
+    super.initState();
+    final saved = _prefs.get(UserPreferences.adminDrawerOrder);
+    _entries = _orderedEntries(_defaultEntries, saved);
+  }
+
+  List<_AdminNavEntry> _orderedEntries(
+    List<_AdminNavEntry> defaults,
+    String savedOrder,
+  ) {
+    if (savedOrder.isEmpty) {
+      return List<_AdminNavEntry>.from(defaults);
+    }
+
+    final byId = <String, _AdminNavEntry>{for (final e in defaults) e.id: e};
+    final ordered = <_AdminNavEntry>[];
+    final seen = <String>{};
+
+    for (final id in savedOrder.split(',')) {
+      final trimmed = id.trim();
+      if (trimmed.isEmpty) continue;
+      final entry = byId[trimmed];
+      if (entry == null || seen.contains(trimmed)) continue;
+      ordered.add(entry);
+      seen.add(trimmed);
+    }
+
+    for (final entry in defaults) {
+      if (!seen.contains(entry.id)) {
+        ordered.add(entry);
+      }
+    }
+
+    return ordered;
+  }
+
+  void _saveOrder() {
+    final value = _entries.map((e) => e.id).join(',');
+    _prefs.set(UserPreferences.adminDrawerOrder, value);
+  }
+
+  void _onReorder(int oldIndex, int newIndex) {
+    setState(() {
+      if (oldIndex < newIndex) {
+        newIndex -= 1;
+      }
+      final moved = _entries.removeAt(oldIndex);
+      _entries.insert(newIndex, moved);
+    });
+    _saveOrder();
+  }
+
+  @override
   Widget build(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
-    final bottomPadding = isEmbedded
-      ? mediaQuery.padding.bottom + 16
-      : mediaQuery.padding.bottom + 88;
+    final bottomPadding = widget.isEmbedded
+        ? mediaQuery.padding.bottom + 16
+        : mediaQuery.padding.bottom + 88;
 
     final content = SafeArea(
       bottom: true,
-      child: ListView(
-      padding: EdgeInsets.only(bottom: bottomPadding),
-      children: [
-        if (!isEmbedded) const SizedBox(height: 8),
-        _section(context, 'Server'),
-        _tile(context, 'Dashboard', Icons.dashboard, Destinations.admin),
-        _tile(context, 'Analytics', Icons.insights, Destinations.adminAnalytics),
-        _tile(context, 'Settings', Icons.settings, Destinations.adminSettings),
-        _tile(context, 'Branding', Icons.brush, Destinations.adminSettingsBranding),
-        _tile(context, 'Users', Icons.people, Destinations.adminUsers),
-        _tile(
-          context,
-          'Libraries',
-          null,
-          Destinations.adminLibraries,
-          iconBuilder: (size, color) => Image.asset(
-            'assets/icons/clapperboard.png',
-            width: size,
-            height: size,
-            color: color,
-            fit: BoxFit.contain,
-          ),
-        ),
-        _section(context, 'Playback'),
-        _tile(context, 'Transcoding', Icons.swap_horiz,
-          Destinations.adminSettingsPlayback),
-        _tile(context, 'Resume', Icons.play_circle_outline,
-          Destinations.adminSettingsResume),
-        _tile(context, 'Streaming', Icons.stream,
-          Destinations.adminSettingsStreaming),
-        _tile(context, 'Trickplay', Icons.view_comfy,
-          Destinations.adminSettingsTrickplay),
-        _section(context, 'Devices'),
-        _tile(context, 'Devices', Icons.devices, Destinations.adminDevices),
-        _tile(context, 'Activity', Icons.history, Destinations.adminActivity),
-        _section(context, 'Advanced'),
-        _tile(context, 'Networking', Icons.language,
-          Destinations.adminSettingsNetworking),
-        _tile(context, 'API Keys', Icons.vpn_key, Destinations.adminKeys),
-        _tile(context, 'Backups', Icons.backup, Destinations.adminBackups),
-        _tile(context, 'Logs', Icons.article, Destinations.adminLogs),
-        _tile(context, 'Scheduled Tasks', Icons.schedule,
-          Destinations.adminTasks),
-        _section(context, 'Plugins'),
-        _tile(context, 'Plugins', Icons.extension, Destinations.adminPlugins),
-        _tile(context, 'Repositories', Icons.source,
-          Destinations.adminRepositories),
-        _section(context, 'Live TV'),
-        _tile(context, 'Live TV', Icons.live_tv, Destinations.adminLiveTv),
-      ],
+      child: ReorderableListView.builder(
+        buildDefaultDragHandles: false,
+        padding: EdgeInsets.only(bottom: bottomPadding),
+        itemCount: _entries.length,
+        onReorder: _onReorder,
+        itemBuilder: (context, index) {
+          final entry = _entries[index];
+          final previousSection = index > 0 ? _entries[index - 1].section : null;
+          final showSection = index == 0 || previousSection != entry.section;
+          return Column(
+            key: ValueKey('admin-drawer-${entry.id}'),
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              if (!widget.isEmbedded && index == 0) const SizedBox(height: 8),
+              if (showSection) _section(context, entry.section),
+              _tile(context, entry, index),
+            ],
+          );
+        },
       ),
     );
 
-    if (isEmbedded) return content;
+    if (widget.isEmbedded) return content;
     return Drawer(child: content);
   }
 
@@ -95,14 +127,11 @@ class AdminDrawer extends StatelessWidget {
 
   Widget _tile(
     BuildContext context,
-    String title,
-    IconData? icon,
-    String destination,
-    {Widget Function(double size, Color color)? iconBuilder,
-    }
+    _AdminNavEntry entry,
+    int index,
   ) {
     final theme = Theme.of(context);
-    final selected = currentPath == destination;
+    final selected = widget.currentPath == entry.destination;
     final iconColor = selected
         ? theme.colorScheme.onPrimaryContainer
         : theme.colorScheme.onSurface;
@@ -116,11 +145,11 @@ class AdminDrawer extends StatelessWidget {
         child: InkWell(
           borderRadius: BorderRadius.circular(9),
           onTap: () {
-            if (!isEmbedded) {
+            if (!widget.isEmbedded) {
               Navigator.of(context).pop();
             }
             if (!selected) {
-              context.go(destination);
+              context.go(entry.destination);
             }
           },
           child: Container(
@@ -136,19 +165,27 @@ class AdminDrawer extends StatelessWidget {
             ),
             child: Row(
               children: [
-                iconBuilder != null
-                    ? iconBuilder(18, iconColor)
-                    : Icon(icon, size: 18, color: iconColor),
+                entry.iconBuilder != null
+                    ? entry.iconBuilder!(18, iconColor)
+                    : Icon(entry.icon, size: 18, color: iconColor),
                 const SizedBox(width: 10),
                 Expanded(
                   child: Text(
-                    title,
+                    entry.title,
                     style: theme.textTheme.labelLarge?.copyWith(
                       color: iconColor,
                       fontWeight: selected ? FontWeight.w700 : FontWeight.w600,
                     ),
                     maxLines: 1,
                     overflow: TextOverflow.ellipsis,
+                  ),
+                ),
+                ReorderableDragStartListener(
+                  index: index,
+                  child: Icon(
+                    Icons.drag_indicator,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
                   ),
                 ),
               ],
@@ -158,4 +195,176 @@ class AdminDrawer extends StatelessWidget {
       ),
     );
   }
+}
+
+class _AdminNavEntry {
+  final String id;
+  final String section;
+  final String title;
+  final IconData? icon;
+  final String destination;
+  final Widget Function(double size, Color color)? iconBuilder;
+
+  const _AdminNavEntry({
+    required this.id,
+    required this.section,
+    required this.title,
+    required this.icon,
+    required this.destination,
+    this.iconBuilder,
+  });
+}
+
+const List<_AdminNavEntry> _defaultEntries = [
+  _AdminNavEntry(
+    id: 'dashboard',
+    section: 'Server',
+    title: 'Dashboard',
+    icon: Icons.dashboard,
+    destination: Destinations.admin,
+  ),
+  _AdminNavEntry(
+    id: 'analytics',
+    section: 'Server',
+    title: 'Analytics',
+    icon: Icons.insights,
+    destination: Destinations.adminAnalytics,
+  ),
+  _AdminNavEntry(
+    id: 'settings',
+    section: 'Server',
+    title: 'Settings',
+    icon: Icons.settings,
+    destination: Destinations.adminSettings,
+  ),
+  _AdminNavEntry(
+    id: 'branding',
+    section: 'Server',
+    title: 'Branding',
+    icon: Icons.brush,
+    destination: Destinations.adminSettingsBranding,
+  ),
+  _AdminNavEntry(
+    id: 'users',
+    section: 'Server',
+    title: 'Users',
+    icon: Icons.people,
+    destination: Destinations.adminUsers,
+  ),
+  _AdminNavEntry(
+    id: 'libraries',
+    section: 'Server',
+    title: 'Libraries',
+    icon: null,
+    destination: Destinations.adminLibraries,
+    iconBuilder: _librariesIcon,
+  ),
+  _AdminNavEntry(
+    id: 'transcoding',
+    section: 'Playback',
+    title: 'Transcoding',
+    icon: Icons.swap_horiz,
+    destination: Destinations.adminSettingsPlayback,
+  ),
+  _AdminNavEntry(
+    id: 'resume',
+    section: 'Playback',
+    title: 'Resume',
+    icon: Icons.play_circle_outline,
+    destination: Destinations.adminSettingsResume,
+  ),
+  _AdminNavEntry(
+    id: 'streaming',
+    section: 'Playback',
+    title: 'Streaming',
+    icon: Icons.stream,
+    destination: Destinations.adminSettingsStreaming,
+  ),
+  _AdminNavEntry(
+    id: 'trickplay',
+    section: 'Playback',
+    title: 'Trickplay',
+    icon: Icons.view_comfy,
+    destination: Destinations.adminSettingsTrickplay,
+  ),
+  _AdminNavEntry(
+    id: 'devices',
+    section: 'Devices',
+    title: 'Devices',
+    icon: Icons.devices,
+    destination: Destinations.adminDevices,
+  ),
+  _AdminNavEntry(
+    id: 'activity',
+    section: 'Devices',
+    title: 'Activity',
+    icon: Icons.history,
+    destination: Destinations.adminActivity,
+  ),
+  _AdminNavEntry(
+    id: 'networking',
+    section: 'Advanced',
+    title: 'Networking',
+    icon: Icons.language,
+    destination: Destinations.adminSettingsNetworking,
+  ),
+  _AdminNavEntry(
+    id: 'api-keys',
+    section: 'Advanced',
+    title: 'API Keys',
+    icon: Icons.vpn_key,
+    destination: Destinations.adminKeys,
+  ),
+  _AdminNavEntry(
+    id: 'backups',
+    section: 'Advanced',
+    title: 'Backups',
+    icon: Icons.backup,
+    destination: Destinations.adminBackups,
+  ),
+  _AdminNavEntry(
+    id: 'logs',
+    section: 'Advanced',
+    title: 'Logs',
+    icon: Icons.article,
+    destination: Destinations.adminLogs,
+  ),
+  _AdminNavEntry(
+    id: 'scheduled-tasks',
+    section: 'Advanced',
+    title: 'Scheduled Tasks',
+    icon: Icons.schedule,
+    destination: Destinations.adminTasks,
+  ),
+  _AdminNavEntry(
+    id: 'plugins',
+    section: 'Plugins',
+    title: 'Plugins',
+    icon: Icons.extension,
+    destination: Destinations.adminPlugins,
+  ),
+  _AdminNavEntry(
+    id: 'repositories',
+    section: 'Plugins',
+    title: 'Repositories',
+    icon: Icons.source,
+    destination: Destinations.adminRepositories,
+  ),
+  _AdminNavEntry(
+    id: 'live-tv',
+    section: 'Live TV',
+    title: 'Live TV',
+    icon: Icons.live_tv,
+    destination: Destinations.adminLiveTv,
+  ),
+];
+
+Widget _librariesIcon(double size, Color color) {
+  return Image.asset(
+    'assets/icons/clapperboard.png',
+    width: size,
+    height: size,
+    color: color,
+    fit: BoxFit.contain,
+  );
 }
