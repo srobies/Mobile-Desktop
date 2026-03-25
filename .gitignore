@@ -56,6 +56,9 @@ app.*.map.json
 # Windows installer
 /Moonfin-Setup-x64.exe
 
+# Android APK artifacts
+/Moonfin-android.apk
+
 # Local private signing/notarization values
 /build-macos.private.env
 

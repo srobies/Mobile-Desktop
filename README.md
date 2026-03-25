@@ -2,9 +2,14 @@
 
 Jellyfin & Emby media client for mobile, TV, and desktop.
 
+## Required Toolchain Versions
+
+- Flutter SDK: stable channel, 3.41+
+- Dart SDK: 3.11+ (see `environment.sdk` in `pubspec.yaml`)
+
 ## Prerequisites
 
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (stable channel, 3.41+)
+- [Flutter SDK](https://docs.flutter.dev/get-started/install)
 - [Git](https://git-scm.com/)
 
 ## Getting Started
@@ -137,17 +142,96 @@ build\windows\x64\runner\Release\moonfin.msix
 
 ### Requirements
 
+- **Supported host OS:** Linux, macOS, or Windows
 - [Android Studio](https://developer.android.com/studio) with Android SDK
-- Android SDK Build-Tools, Platform-Tools, and an Android platform (API 21+)
+- Android SDK Build-Tools, Platform-Tools, and an Android platform
+- [Flutter SDK](https://docs.flutter.dev/get-started/install) (stable channel, 3.41+)
+  - Either add `flutter` to `PATH`, set `FLUTTER_BIN`, or install it in one of these common locations used by the build script:
+    - `~/flutter/bin/flutter`
+    - `~/Documents/flutter/bin/flutter`
+    - `~/snap/flutter/common/flutter/bin/flutter`
+
+### One-time setup checklist
+
+Run these checks before the first Android build:
 
 ```bash
-flutter build apk --release       # APK
-flutter build appbundle --release  # AAB (for Google Play)
+flutter doctor -v
+flutter doctor --android-licenses
 ```
 
-Output:
+Confirm these work:
+- `flutter doctor -v` shows the Android toolchain ready
+- Android SDK and platform tools are installed
+- At least one Android platform is installed in Android Studio SDK Manager
+
+### One-command Android APK build
+
+On Linux or macOS, from the repo root, run:
+
+```bash
+./build-android.sh
+```
+
+On Windows PowerShell, from the repo root, run:
+
+```powershell
+.\build-android.ps1
+```
+
+What this does:
+- runs `flutter clean`
+- runs `flutter pub get`
+- builds a release APK for `arm64-v8a` and `armeabi-v7a`
+- excludes `x86_64` plugin JNI libraries during packaging
+- copies the final APK to the repo root
+
+Note:
+- This release flow targets ARM devices only. `x86_64` Android emulators are not supported by these release artifacts.
+
+Final outputs:
+- Root copy: `Moonfin-android.apk`
+- Build copy: `build/app/outputs/flutter-apk/app-release.apk`
+
+### Example release flow
+
+```bash
+git pull
+./build-android.sh
+```
+
+Windows PowerShell equivalent:
+
+```powershell
+git pull
+.\build-android.ps1
+```
+
+After the script finishes, share or test:
+- `Moonfin-android.apk`
+
+### Manual Android builds
+
+Build a release APK:
+
+```bash
+flutter build apk --release --target-platform android-arm64,android-arm
+```
+
+Build a Google Play bundle:
+
+```bash
+flutter build appbundle --release
+```
+
+Outputs:
 - APK: `build/app/outputs/flutter-apk/app-release.apk`
 - AAB: `build/app/outputs/bundle/release/app-release.aab`
+
+### Windows note
+
+Android builds do not require Linux specifically. They can be built on Windows too.
+Use `build-android.ps1` on Windows PowerShell.
 
 ## Building for iOS
 

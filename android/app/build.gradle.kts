@@ -49,6 +49,12 @@ android {
             signingConfig = signingConfigs.getByName("release")
         }
     }
+
+    packaging {
+        jniLibs {
+            excludes += setOf("**/x86_64/*.so")
+        }
+    }
 }
 
 flutter {
