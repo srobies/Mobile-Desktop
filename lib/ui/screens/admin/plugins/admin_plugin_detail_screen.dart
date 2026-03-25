@@ -3,6 +3,7 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get_it/get_it.dart';
 import 'package:server_core/server_core.dart';
 
+import '../admin_plugin_version_utils.dart';
 import '../providers/admin_user_providers.dart';
 
 final _packageInfoProvider =
@@ -139,6 +140,41 @@ class _AdminPluginDetailScreenState
     }
   }
 
+  Future<void> _installPluginUpdate(
+    PluginInfo plugin,
+    PackageInfo package,
+    VersionInfo version,
+  ) async {
+    try {
+      await _api.installPackage(
+        package.name,
+        assemblyGuid: package.id,
+        version: version.version,
+        repositoryUrl:
+            version.repositoryUrl.isNotEmpty ? version.repositoryUrl : null,
+      );
+
+      ref.invalidate(adminInstalledPluginsProvider);
+      ref.invalidate(adminAvailablePackagesProvider);
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Updating "${plugin.name}" to v${version.version}...',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to install update: $e')),
+        );
+      }
+    }
+  }
+
   String _pluginImageUrl(PluginInfo plugin) {
     final client = GetIt.instance<MediaServerClient>();
     return '${client.baseUrl}/Plugins/${plugin.id}/${plugin.version}/Image';
@@ -179,8 +215,10 @@ class _AdminPluginDetailScreenState
       BuildContext context, PluginInfo plugin, PackageInfo? packageInfo) {
     final theme = Theme.of(context);
     final isWide = MediaQuery.sizeOf(context).width >= 800;
+    final latestUpdateVersion = packageInfo == null || plugin.version.isEmpty
+      ? null
+      : latestVersionInfoAfter(plugin.version, packageInfo.versions);
 
-    // Auto-load configuration when plugin is first displayed
     if (plugin.configurationFileName != null &&
         _config == null &&
         !_loadingConfig &&
@@ -251,7 +289,16 @@ class _AdminPluginDetailScreenState
                       _ActionsSection(
                         plugin: plugin,
                         toggling: _toggling,
+                        latestUpdateVersion: latestUpdateVersion?.version,
                         onToggle: () => _togglePlugin(plugin),
+                        onInstallUpdate: latestUpdateVersion == null ||
+                                packageInfo == null
+                            ? null
+                            : () => _installPluginUpdate(
+                                  plugin,
+                                  packageInfo,
+                                  latestUpdateVersion,
+                                ),
                         onUninstall: () => _uninstallPlugin(plugin),
                       ),
                       const SizedBox(height: 16),
@@ -313,7 +360,15 @@ class _AdminPluginDetailScreenState
           _ActionsSection(
             plugin: plugin,
             toggling: _toggling,
+            latestUpdateVersion: latestUpdateVersion?.version,
             onToggle: () => _togglePlugin(plugin),
+            onInstallUpdate: latestUpdateVersion == null || packageInfo == null
+                ? null
+                : () => _installPluginUpdate(
+                      plugin,
+                      packageInfo,
+                      latestUpdateVersion,
+                    ),
             onUninstall: () => _uninstallPlugin(plugin),
           ),
         ],
@@ -432,13 +487,17 @@ class _PluginImage extends StatelessWidget {
 class _ActionsSection extends StatelessWidget {
   final PluginInfo plugin;
   final bool toggling;
+  final String? latestUpdateVersion;
   final VoidCallback onToggle;
+  final VoidCallback? onInstallUpdate;
   final VoidCallback onUninstall;
 
   const _ActionsSection({
     required this.plugin,
     required this.toggling,
+    this.latestUpdateVersion,
     required this.onToggle,
+    this.onInstallUpdate,
     required this.onUninstall,
   });
 
@@ -462,6 +521,21 @@ class _ActionsSection extends StatelessWidget {
                   : (_) => onToggle(),
             ),
             const Divider(),
+            if (onInstallUpdate != null)
+              ListTile(
+                contentPadding: EdgeInsets.zero,
+                leading: Icon(
+                  Icons.download,
+                  color: theme.colorScheme.primary,
+                ),
+                title: Text(
+                  latestUpdateVersion != null
+                      ? 'Install update (v$latestUpdateVersion)'
+                      : 'Install update',
+                ),
+                onTap: onInstallUpdate,
+              ),
+            if (onInstallUpdate != null) const Divider(),
             ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.delete_outline, color: theme.colorScheme.error),

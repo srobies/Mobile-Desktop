@@ -92,6 +92,7 @@ class _AdminPluginsScreenState extends ConsumerState<AdminPluginsScreen>
                 onStatusChanged: (filter) => setState(() => _installedFilter = filter),
                 onToggle: _togglePlugin,
                 onUninstall: _uninstallPlugin,
+                onInstallUpdate: _installPluginUpdate,
               ),
               _CatalogTab(
                 searchQuery: _searchQuery,
@@ -170,6 +171,7 @@ class _AdminPluginsScreenState extends ConsumerState<AdminPluginsScreen>
             : null,
       );
       ref.invalidate(adminInstalledPluginsProvider);
+      ref.invalidate(adminAvailablePackagesProvider);
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(SnackBar(
             content: Text('"${package.name}" is being installed...')));
@@ -181,9 +183,42 @@ class _AdminPluginsScreenState extends ConsumerState<AdminPluginsScreen>
       }
     }
   }
+
+  Future<void> _installPluginUpdate(
+    PluginInfo plugin,
+    PackageInfo package,
+    VersionInfo version,
+  ) async {
+    try {
+      await _api.installPackage(
+        package.name,
+        assemblyGuid: package.id,
+        version: version.version,
+        repositoryUrl:
+            version.repositoryUrl.isNotEmpty ? version.repositoryUrl : null,
+      );
+      ref.invalidate(adminInstalledPluginsProvider);
+      ref.invalidate(adminAvailablePackagesProvider);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text(
+              'Updating "${plugin.name}" to v${version.version}...',
+            ),
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text('Failed to install update: $e')),
+        );
+      }
+    }
+  }
 }
 
-enum _InstalledPluginFilter { all, active, disabled, restart, problem }
+enum _InstalledPluginFilter { all, active, restart }
 
 class _InstalledTab extends ConsumerWidget {
   final String searchQuery;
@@ -191,6 +226,8 @@ class _InstalledTab extends ConsumerWidget {
   final ValueChanged<_InstalledPluginFilter> onStatusChanged;
   final Future<void> Function(PluginInfo) onToggle;
   final Future<void> Function(PluginInfo) onUninstall;
+  final Future<void> Function(PluginInfo, PackageInfo, VersionInfo)
+      onInstallUpdate;
 
   const _InstalledTab({
     required this.searchQuery,
@@ -198,6 +235,7 @@ class _InstalledTab extends ConsumerWidget {
     required this.onStatusChanged,
     required this.onToggle,
     required this.onUninstall,
+    required this.onInstallUpdate,
   });
 
   @override
@@ -221,6 +259,12 @@ class _InstalledTab extends ConsumerWidget {
         ),
       ),
       data: (plugins) {
+        final client = GetIt.instance<MediaServerClient>();
+        final imageUrlsByPluginId = {
+          for (final plugin in plugins)
+            if (plugin.hasImage && plugin.id.isNotEmpty)
+              plugin.id: _pluginImageUrl(client, plugin),
+        };
         final availableById = {
           for (final package in packagesAsync.valueOrNull ?? <PackageInfo>[])
             if (package.id.isNotEmpty) package.id: package,
@@ -232,23 +276,14 @@ class _InstalledTab extends ConsumerWidget {
 
         var filtered = plugins;
         filtered = filtered.where((plugin) {
-          final updateInfo =
-              updateInfoByPluginId[plugin.id] ?? const _PluginUpdateInfo();
-          final hasUpdate = updateInfo.latestVersion != null;
           switch (statusFilter) {
             case _InstalledPluginFilter.all:
               return true;
             case _InstalledPluginFilter.active:
               return plugin.status == PluginStatus.active;
-            case _InstalledPluginFilter.disabled:
-              return plugin.status == PluginStatus.disabled;
             case _InstalledPluginFilter.restart:
               return plugin.status == PluginStatus.restart ||
                   plugin.status == PluginStatus.deleted;
-            case _InstalledPluginFilter.problem:
-              return plugin.status == PluginStatus.malfunctioned ||
-                  plugin.status == PluginStatus.notSupported ||
-                  hasUpdate;
           }
         }).toList();
         if (searchQuery.isNotEmpty) {
@@ -270,38 +305,11 @@ class _InstalledTab extends ConsumerWidget {
 
         return Column(
           children: [
-            SizedBox(
-              height: 48,
-              child: ListView(
-                scrollDirection: Axis.horizontal,
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                children: [
-                  _InstalledFilterChip(
-                    label: 'All',
-                    selected: statusFilter == _InstalledPluginFilter.all,
-                    onTap: () => onStatusChanged(_InstalledPluginFilter.all),
-                  ),
-                  _InstalledFilterChip(
-                    label: 'Active',
-                    selected: statusFilter == _InstalledPluginFilter.active,
-                    onTap: () => onStatusChanged(_InstalledPluginFilter.active),
-                  ),
-                  _InstalledFilterChip(
-                    label: 'Disabled',
-                    selected: statusFilter == _InstalledPluginFilter.disabled,
-                    onTap: () => onStatusChanged(_InstalledPluginFilter.disabled),
-                  ),
-                  _InstalledFilterChip(
-                    label: 'Restart',
-                    selected: statusFilter == _InstalledPluginFilter.restart,
-                    onTap: () => onStatusChanged(_InstalledPluginFilter.restart),
-                  ),
-                  _InstalledFilterChip(
-                    label: 'Issues',
-                    selected: statusFilter == _InstalledPluginFilter.problem,
-                    onTap: () => onStatusChanged(_InstalledPluginFilter.problem),
-                  ),
-                ],
+            Padding(
+              padding: const EdgeInsets.fromLTRB(12, 8, 12, 6),
+              child: _InstalledFilterTabs(
+                statusFilter: statusFilter,
+                onStatusChanged: onStatusChanged,
               ),
             ),
             Expanded(
@@ -316,6 +324,15 @@ class _InstalledTab extends ConsumerWidget {
                     plugin: plugin,
                     hasUpdate: updateInfo.latestVersion != null,
                     latestVersion: updateInfo.latestVersion,
+                    imageUrl: imageUrlsByPluginId[plugin.id],
+                    onUpdate: updateInfo.package != null &&
+                            updateInfo.latestVersionInfo != null
+                        ? () => onInstallUpdate(
+                              plugin,
+                              updateInfo.package!,
+                              updateInfo.latestVersionInfo!,
+                            )
+                        : null,
                     onTap: () =>
                         context.push(Destinations.adminPlugin(plugin.id)),
                     onToggle: () => onToggle(plugin),
@@ -335,24 +352,90 @@ class _InstalledTab extends ConsumerWidget {
       return const _PluginUpdateInfo();
     }
 
-    return _PluginUpdateInfo(
-      latestVersion: latestVersionAfter(plugin.version, package.versions),
+    final latestVersion = latestVersionAfter(plugin.version, package.versions);
+    final latestVersionInfo = latestVersionInfoAfter(
+      plugin.version,
+      package.versions,
     );
+
+    return _PluginUpdateInfo(
+      latestVersion: latestVersion,
+      latestVersionInfo: latestVersionInfo,
+      package: package,
+    );
+  }
+
+  String _pluginImageUrl(MediaServerClient client, PluginInfo plugin) {
+    final base = client.baseUrl;
+    final token = client.accessToken;
+    final pluginId = Uri.encodeComponent(plugin.id);
+    final version = Uri.encodeComponent(plugin.version);
+    final apiKeySuffix = token == null || token.isEmpty
+        ? ''
+        : '?api_key=${Uri.encodeQueryComponent(token)}';
+    return '$base/Plugins/$pluginId/$version/Image$apiKeySuffix';
   }
 }
 
 class _PluginUpdateInfo {
   final String? latestVersion;
+  final VersionInfo? latestVersionInfo;
+  final PackageInfo? package;
 
-  const _PluginUpdateInfo({this.latestVersion});
+  const _PluginUpdateInfo({
+    this.latestVersion,
+    this.latestVersionInfo,
+    this.package,
+  });
 }
 
-class _InstalledFilterChip extends StatelessWidget {
+class _InstalledFilterTabs extends StatelessWidget {
+  final _InstalledPluginFilter statusFilter;
+  final ValueChanged<_InstalledPluginFilter> onStatusChanged;
+
+  const _InstalledFilterTabs({
+    required this.statusFilter,
+    required this.onStatusChanged,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+
+    return Container(
+      decoration: BoxDecoration(
+        color: theme.colorScheme.surfaceContainerLow,
+        borderRadius: BorderRadius.circular(10),
+      ),
+      child: Row(
+        children: [
+          _InstalledFilterTab(
+            label: 'All',
+            selected: statusFilter == _InstalledPluginFilter.all,
+            onTap: () => onStatusChanged(_InstalledPluginFilter.all),
+          ),
+          _InstalledFilterTab(
+            label: 'Active',
+            selected: statusFilter == _InstalledPluginFilter.active,
+            onTap: () => onStatusChanged(_InstalledPluginFilter.active),
+          ),
+          _InstalledFilterTab(
+            label: 'Restart',
+            selected: statusFilter == _InstalledPluginFilter.restart,
+            onTap: () => onStatusChanged(_InstalledPluginFilter.restart),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _InstalledFilterTab extends StatelessWidget {
   final String label;
   final bool selected;
   final VoidCallback onTap;
 
-  const _InstalledFilterChip({
+  const _InstalledFilterTab({
     required this.label,
     required this.selected,
     required this.onTap,
@@ -360,12 +443,37 @@ class _InstalledFilterChip extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Padding(
-      padding: const EdgeInsets.only(right: 8),
-      child: FilterChip(
-        label: Text(label),
-        selected: selected,
-        onSelected: (_) => onTap(),
+    final theme = Theme.of(context);
+    final textColor = selected
+        ? theme.colorScheme.onPrimaryContainer
+        : theme.colorScheme.onSurfaceVariant;
+
+    return Expanded(
+      child: Padding(
+        padding: const EdgeInsets.all(4),
+        child: Material(
+          color: selected
+              ? theme.colorScheme.primaryContainer
+              : Colors.transparent,
+          borderRadius: BorderRadius.circular(8),
+          child: InkWell(
+            borderRadius: BorderRadius.circular(8),
+            onTap: onTap,
+            child: SizedBox(
+              height: 34,
+              child: Center(
+                child: Text(
+                  label,
+                  style: theme.textTheme.labelLarge?.copyWith(
+                    color: textColor,
+                    fontWeight:
+                        selected ? FontWeight.w700 : FontWeight.w500,
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
       ),
     );
   }
@@ -375,6 +483,8 @@ class _InstalledPluginTile extends StatelessWidget {
   final PluginInfo plugin;
   final bool hasUpdate;
   final String? latestVersion;
+  final String? imageUrl;
+  final VoidCallback? onUpdate;
   final VoidCallback onTap;
   final VoidCallback onToggle;
   final VoidCallback onUninstall;
@@ -383,6 +493,8 @@ class _InstalledPluginTile extends StatelessWidget {
     required this.plugin,
     required this.hasUpdate,
     this.latestVersion,
+    this.imageUrl,
+    this.onUpdate,
     required this.onTap,
     required this.onToggle,
     required this.onUninstall,
@@ -391,46 +503,39 @@ class _InstalledPluginTile extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final theme = Theme.of(context);
-    final statusColor = _statusColor(plugin.status, theme);
-
-    final (statusIcon, statusLabel) = _statusInfo(plugin.status);
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
-      leading: CircleAvatar(
-        backgroundColor: statusColor.withValues(alpha: 0.15),
-        child: Icon(Icons.extension, color: statusColor, size: 20),
-      ),
-      title: Row(
-        children: [
-          Flexible(
-            child: Text(plugin.name, overflow: TextOverflow.ellipsis),
-          ),
-          const SizedBox(width: 8),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-              color: statusColor.withValues(alpha: 0.12),
-              borderRadius: BorderRadius.circular(999),
-            ),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Icon(statusIcon, size: 11, color: statusColor),
-                const SizedBox(width: 3),
-                Text(
-                  statusLabel,
-                  style: TextStyle(
-                    fontSize: 10,
-                    color: statusColor,
-                    fontWeight: FontWeight.w600,
+      leading: ClipRRect(
+        borderRadius: BorderRadius.circular(8),
+        child: SizedBox(
+          width: 36,
+          height: 36,
+          child: imageUrl == null
+              ? Container(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  child: Icon(
+                    Icons.extension,
+                    size: 18,
+                    color: theme.colorScheme.onSurfaceVariant,
+                  ),
+                )
+              : Container(
+                  color: theme.colorScheme.surfaceContainerHighest,
+                  padding: const EdgeInsets.all(2),
+                  child: Image.network(
+                    imageUrl!,
+                    fit: BoxFit.contain,
+                    errorBuilder: (_, __, ___) => Icon(
+                      Icons.extension,
+                      size: 18,
+                      color: theme.colorScheme.onSurfaceVariant,
+                    ),
                   ),
                 ),
-              ],
-            ),
-          ),
-        ],
+        ),
       ),
+      title: Text(plugin.name, overflow: TextOverflow.ellipsis),
       subtitle: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
@@ -479,8 +584,13 @@ class _InstalledPluginTile extends StatelessWidget {
           switch (value) {
             case 'toggle':
               onToggle();
+              return;
+            case 'update':
+              onUpdate?.call();
+              return;
             case 'uninstall':
               onUninstall();
+              return;
           }
         },
         itemBuilder: (context) => [
@@ -490,6 +600,15 @@ class _InstalledPluginTile extends StatelessWidget {
                 ? 'Enable'
                 : 'Disable'),
           ),
+          if (hasUpdate && onUpdate != null)
+            PopupMenuItem(
+              value: 'update',
+              child: Text(
+                latestVersion != null
+                    ? 'Install update (v$latestVersion)'
+                    : 'Install update',
+              ),
+            ),
           if (plugin.canUninstall)
             const PopupMenuItem(
               value: 'uninstall',
@@ -498,43 +617,6 @@ class _InstalledPluginTile extends StatelessWidget {
         ],
       ),
     );
-  }
-
-  (IconData, String) _statusInfo(PluginStatus status) {
-    switch (status) {
-      case PluginStatus.active:
-        return (Icons.check_circle_outline, 'Active');
-      case PluginStatus.disabled:
-        return (Icons.block, 'Disabled');
-      case PluginStatus.restart:
-        return (Icons.restart_alt, 'Restart');
-      case PluginStatus.malfunctioned:
-        return (Icons.warning_amber, 'Error');
-      case PluginStatus.notSupported:
-        return (Icons.error_outline, 'Unsupported');
-      case PluginStatus.superseded:
-        return (Icons.new_releases, 'Superseded');
-      case PluginStatus.deleted:
-        return (Icons.delete_outline, 'Deleted');
-    }
-  }
-
-  Color _statusColor(PluginStatus status, ThemeData theme) {
-    switch (status) {
-      case PluginStatus.active:
-        return Colors.green;
-      case PluginStatus.disabled:
-        return theme.colorScheme.onSurfaceVariant;
-      case PluginStatus.restart:
-        return Colors.orange;
-      case PluginStatus.malfunctioned:
-        return theme.colorScheme.error;
-      case PluginStatus.notSupported:
-        return theme.colorScheme.error;
-      case PluginStatus.superseded:
-      case PluginStatus.deleted:
-        return theme.colorScheme.onSurfaceVariant;
-    }
   }
 }
 

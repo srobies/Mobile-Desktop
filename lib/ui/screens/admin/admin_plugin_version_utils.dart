@@ -44,3 +44,21 @@ String? latestVersionAfter(
 
   return latest;
 }
+
+VersionInfo? latestVersionInfoAfter(
+  String currentVersion,
+  Iterable<VersionInfo> versions,
+) {
+  final latest = latestVersionAfter(currentVersion, versions);
+  if (latest == null) {
+    return null;
+  }
+
+  for (final version in versions) {
+    if (version.version == latest) {
+      return version;
+    }
+  }
+
+  return null;
+}
