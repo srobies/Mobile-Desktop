@@ -4,10 +4,13 @@ import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
 
 import '../../../auth/repositories/session_repository.dart';
+import '../../../data/services/plugin_sync_service.dart';
 import '../../../di/providers.dart';
+import '../../../preference/user_preferences.dart';
 import '../../navigation/destinations.dart';
 import '../admin/providers/admin_status_providers.dart';
 import '../../../util/platform_detection.dart';
+import 'customization_entries.dart';
 
 class SettingsScreen extends ConsumerStatefulWidget {
   const SettingsScreen({super.key});
@@ -19,6 +22,10 @@ class SettingsScreen extends ConsumerStatefulWidget {
 class _SettingsScreenState extends ConsumerState<SettingsScreen> {
   @override
   Widget build(BuildContext context) {
+    final prefs = GetIt.instance<UserPreferences>();
+    final pluginSync = GetIt.instance<PluginSyncService>();
+    final showSeerrIntegration =
+        pluginSync.pluginAvailable && prefs.get(UserPreferences.seerrEnabled);
     final isAdmin = ref.watch(isAdminProvider);
     final adminBadgeCount = isAdmin
         ? ref.watch(adminNotificationSummaryProvider).valueOrNull?.count ?? 0
@@ -45,40 +52,14 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
       ),
     ];
 
-    final customizationEntries = <_SettingsEntry>[
-      _SettingsEntry(
-        icon: Icons.palette,
-        title: 'Theme & Appearance',
-        subtitle: PlatformDetection.isMobile
-            ? 'Watched indicators, backdrops'
-            : 'Focus color, watched indicators, backdrops',
-        onTap: () => context.push(Destinations.settingsAppearance),
-      ),
-      _SettingsEntry(
-        icon: Icons.view_sidebar,
-        title: 'Navigation',
-        subtitle: 'Navbar style, toolbar buttons, appearance',
-        onTap: () => context.push(Destinations.settingsNavigation),
-      ),
-      _SettingsEntry(
-        icon: Icons.home,
-        title: 'Home Sections',
-        subtitle: 'Reorder and toggle home rows',
-        onTap: () => context.push(Destinations.settingsHomeSections),
-      ),
-      _SettingsEntry(
-        icon: Icons.featured_play_list,
-        title: 'Media Bar',
-        subtitle: 'Featured content, appearance',
-        onTap: () => context.push(Destinations.settingsMediaBar),
-      ),
-      _SettingsEntry(
-        icon: Icons.photo_library,
-        title: 'Library Display',
-        subtitle: 'Poster size, image type, folder view',
-        onTap: () => context.push(Destinations.settingsLibrary),
-      ),
-    ];
+    final customizationEntries = buildCustomizationEntries(
+      isMobile: PlatformDetection.isMobile,
+    ).map((entry) => _SettingsEntry(
+          icon: entry.icon,
+          title: entry.title,
+          subtitle: entry.subtitle,
+          onTap: () => context.push(entry.destination),
+        )).toList();
 
     final playbackEntries = <_SettingsEntry>[
       _SettingsEntry(
@@ -110,22 +91,23 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           color: color,
           fit: BoxFit.contain,
         ),
-        title: 'Moonfin Settings',
-        subtitle: 'Plugin sync, theme music, ratings',
-        onTap: () => context.push(Destinations.settingsMoonfin),
+        title: 'Plugin',
+        subtitle: 'Server sync and plugin status',
+        onTap: () => context.push(Destinations.settingsPlugin),
       ),
-      _SettingsEntry(
-        iconBuilder: (size, color) => Image.asset(
-          'assets/icons/seerr.png',
-          width: size,
-          height: size,
-          color: color,
-          fit: BoxFit.contain,
+      if (showSeerrIntegration)
+        _SettingsEntry(
+          iconBuilder: (size, color) => Image.asset(
+            'assets/icons/seerr.png',
+            width: size,
+            height: size,
+            color: color,
+            fit: BoxFit.contain,
+          ),
+          title: 'Seerr',
+          subtitle: 'Media request integration',
+          onTap: () => context.push(Destinations.settingsSeerr),
         ),
-        title: 'Seerr',
-        subtitle: 'Media request integration',
-        onTap: () => context.push(Destinations.settingsSeerr),
-      ),
     ];
 
     final otherEntries = <_SettingsEntry>[
@@ -171,6 +153,7 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
         title: 'Customization',
         subtitle: 'Theme and layout',
         entries: customizationEntries,
+        onTap: () => context.push(Destinations.settingsCustomization),
       ),
       _SettingsSectionData(
         icon: Icons.play_circle,
@@ -186,8 +169,8 @@ class _SettingsScreenState extends ConsumerState<SettingsScreen> {
           color: color,
           fit: BoxFit.contain,
         ),
-        title: 'Moonfin',
-        subtitle: 'Integrations',
+        title: 'Integrations',
+        subtitle: 'Plugin and requests',
         entries: moonfinEntries,
       ),
     ];

@@ -92,6 +92,7 @@ class Destinations {
 
   // Settings
   static const settings = '/settings';
+  static const settingsCustomization = '/settings/customization';
   static const settingsPlayback = '/settings/playback';
   static const settingsAppearance = '/settings/appearance';
   static const settingsHomeSections = '/settings/home-sections';
@@ -104,8 +105,8 @@ class Destinations {
   static const settingsMediaBar = '/settings/media-bar';
   static const settingsLibrary = '/settings/library';
   static const settingsSeerr = '/settings/seerr-config';
-  static const settingsMoonfin = '/settings/moonfin';
-  static const settingsRatings = '/settings/moonfin/ratings';
+  static const settingsPlugin = '/settings/plugin';
+  static const settingsRatings = '/settings/ratings';
   static const settingsNavigation = '/settings/navigation';
 
   // Seerr

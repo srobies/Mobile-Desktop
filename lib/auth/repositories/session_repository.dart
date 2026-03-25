@@ -84,6 +84,7 @@ class SessionRepository {
     String? password,
   }) async {
     _setState(SessionState.switching);
+    _pluginSyncService.resetState();
 
     final server = _serverRepository.getServer(serverId);
     if (server == null) {
@@ -156,6 +157,7 @@ class SessionRepository {
   Future<void> destroyCurrentSession() async {
     final serverId = _activeServerId;
     final userId = _activeUserId;
+    _pluginSyncService.resetState();
 
     // Revoke the token server-side
     if (serverId != null) {

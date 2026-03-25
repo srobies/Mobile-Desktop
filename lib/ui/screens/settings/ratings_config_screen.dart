@@ -5,6 +5,7 @@ import 'package:server_core/server_core.dart';
 
 import '../../../data/services/plugin_sync_service.dart';
 import '../../../preference/user_preferences.dart';
+import '../../widgets/settings/preference_tiles.dart';
 
 const _allSources = [
   'tomatoes',
@@ -98,7 +99,7 @@ class _RatingsConfigScreenState extends State<RatingsConfigScreen> {
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
-        title: const Text('Rating Sources'),
+        title: const Text('Ratings'),
         actions: [
           IconButton(
             icon: const Icon(Icons.restore),
@@ -116,6 +117,37 @@ class _RatingsConfigScreenState extends State<RatingsConfigScreen> {
         ],
       ),
       body: ReorderableListView.builder(
+        header: Column(
+          children: [
+            SwitchPreferenceTile(
+              preference: UserPreferences.enableAdditionalRatings,
+              title: 'Additional Ratings',
+              subtitle: 'Show MDBList and TMDB ratings',
+              icon: Icons.star,
+              onChanged: _save,
+            ),
+            SwitchPreferenceTile(
+              preference: UserPreferences.showRatingLabels,
+              title: 'Rating Labels',
+              subtitle: 'Show labels next to rating icons',
+              icon: Icons.label,
+              onChanged: _save,
+            ),
+            SwitchPreferenceTile(
+              preference: UserPreferences.enableEpisodeRatings,
+              title: 'Episode Ratings',
+              subtitle: 'Show ratings on individual episodes',
+              icon: Icons.stars,
+              onChanged: _save,
+            ),
+            const Divider(),
+            const ListTile(
+              leading: Icon(Icons.reorder),
+              title: Text('Rating Sources'),
+              subtitle: Text('Enable and reorder the rating sources shown throughout the app'),
+            ),
+          ],
+        ),
         itemCount: _items.length,
         onReorder: (oldIndex, newIndex) {
           setState(() {

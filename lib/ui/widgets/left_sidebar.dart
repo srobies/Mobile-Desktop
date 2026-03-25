@@ -10,6 +10,7 @@ import '../../auth/repositories/user_repository.dart';
 import '../../data/models/aggregated_library.dart';
 import '../../data/repositories/multi_server_repository.dart';
 import '../../data/repositories/user_views_repository.dart';
+import '../../data/services/plugin_sync_service.dart';
 import '../../preference/preference_constants.dart';
 import '../../preference/seerr_preferences.dart';
 import '../../preference/user_preferences.dart';
@@ -388,7 +389,8 @@ class _LeftSidebarState extends State<LeftSidebar> {
                   showLabel: _showLabels,
                   onPressed: () {},
                 ),
-              if (_prefs.get(UserPreferences.seerrEnabled))
+              if (GetIt.instance<PluginSyncService>().pluginAvailable &&
+                  _prefs.get(UserPreferences.seerrEnabled))
                 Builder(builder: (context) {
                   final seerrPrefs = GetIt.instance<SeerrPreferences>();
                   final isSeerr = seerrPrefs.isSeerrVariant;

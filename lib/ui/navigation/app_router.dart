@@ -49,12 +49,13 @@ import '../screens/search/search_screen.dart';
 import '../screens/settings/about_screen.dart';
 import '../screens/settings/appearance_settings_screen.dart';
 import '../screens/settings/auth_settings_screen.dart';
+import '../screens/settings/customization_settings_screen.dart';
 import '../screens/settings/download_settings_screen.dart';
 import '../screens/settings/home_sections_screen.dart';
 import '../screens/settings/seerr_config_screen.dart';
 import '../screens/settings/library_settings_screen.dart';
 import '../screens/settings/media_bar_settings_screen.dart';
-import '../screens/settings/moonfin_settings_screen.dart';
+import '../screens/settings/plugin_settings_screen.dart';
 import '../screens/settings/navigation_settings_screen.dart';
 import '../screens/settings/ratings_config_screen.dart';
 import '../screens/settings/parental_settings_screen.dart';
@@ -507,6 +508,10 @@ final appRouter = GoRouter(
       builder: (context, state) => const SettingsScreen(),
       routes: [
         GoRoute(
+          path: 'customization',
+          builder: (context, state) => const CustomizationSettingsScreen(),
+        ),
+        GoRoute(
           path: 'playback',
           builder: (context, state) => const PlaybackSettingsScreen(),
         ),
@@ -555,14 +560,12 @@ final appRouter = GoRouter(
           builder: (context, state) => const SeerrConfigScreen(),
         ),
         GoRoute(
-          path: 'moonfin',
-          builder: (context, state) => const MoonfinSettingsScreen(),
-          routes: [
-            GoRoute(
-              path: 'ratings',
-              builder: (context, state) => const RatingsConfigScreen(),
-            ),
-          ],
+          path: 'plugin',
+          builder: (context, state) => const PluginSettingsScreen(),
+        ),
+        GoRoute(
+          path: 'ratings',
+          builder: (context, state) => const RatingsConfigScreen(),
         ),
         GoRoute(
           path: 'navigation',

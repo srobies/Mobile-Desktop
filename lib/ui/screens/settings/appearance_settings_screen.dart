@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
 import 'package:jellyfin_design/jellyfin_design.dart';
+import 'package:server_core/server_core.dart';
 
+import '../../../data/services/plugin_sync_service.dart';
 import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../util/platform_detection.dart';
@@ -16,6 +18,14 @@ class AppearanceSettingsScreen extends StatefulWidget {
 
 class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
   final _prefs = GetIt.instance<UserPreferences>();
+
+  void _pushSync() {
+    final syncService = GetIt.instance<PluginSyncService>();
+    if (syncService.pluginAvailable) {
+      final client = GetIt.instance<MediaServerClient>();
+      syncService.pushSettings(client);
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -64,6 +74,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             title: 'Background Backdrops',
             subtitle: 'Show backdrop images behind content',
             icon: Icons.wallpaper,
+            onChanged: _pushSync,
           ),
           SwitchPreferenceTile(
             preference: UserPreferences.seriesThumbnailsEnabled,
@@ -82,6 +93,46 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
               ClockBehavior.never => 'Never',
             },
           ),
+          const Divider(),
+          StringPickerPreferenceTile(
+            preference: UserPreferences.seasonalSurprise,
+            title: 'Seasonal Effects',
+            icon: Icons.celebration,
+            options: const {
+              'none': 'None',
+              'snow': 'Snow',
+              'fireworks': 'Fireworks',
+              'confetti': 'Confetti',
+              'leaves': 'Falling Leaves',
+            },
+            onChanged: _pushSync,
+          ),
+          SwitchPreferenceTile(
+            preference: UserPreferences.themeMusicEnabled,
+            title: 'Theme Music',
+            subtitle: 'Play theme music on detail pages',
+            icon: Icons.music_note,
+            onChanged: _pushSync,
+          ),
+          SliderPreferenceTile(
+            preference: UserPreferences.themeMusicVolume,
+            title: 'Theme Music Volume',
+            icon: Icons.volume_up,
+            min: 0,
+            max: 100,
+            divisions: 20,
+            labelOf: (v) => '$v%',
+            onChangeEnd: _pushSync,
+          ),
+          if (!isMobile)
+            SwitchPreferenceTile(
+              preference: UserPreferences.themeMusicOnHomeRows,
+              title: 'Theme Music on Home Rows',
+              subtitle: 'Play when browsing home screen',
+              icon: Icons.queue_music,
+              onChanged: _pushSync,
+            ),
+          const Divider(),
           SliderPreferenceTile(
             preference: UserPreferences.detailsBackgroundBlurAmount,
             title: 'Details Background Blur',
@@ -90,6 +141,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             max: 25,
             divisions: 25,
             labelOf: (v) => '${v}px',
+            onChangeEnd: _pushSync,
           ),
           SliderPreferenceTile(
             preference: UserPreferences.browsingBackgroundBlurAmount,
@@ -99,6 +151,7 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
             max: 25,
             divisions: 25,
             labelOf: (v) => '${v}px',
+            onChangeEnd: _pushSync,
           ),
         ],
       ),

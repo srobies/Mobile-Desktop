@@ -1,4 +1,5 @@
 import 'package:dio/dio.dart';
+import 'package:flutter/foundation.dart';
 import 'package:get_it/get_it.dart';
 import 'package:jellyfin_preference/jellyfin_preference.dart';
 import 'package:server_core/server_core.dart';
@@ -11,7 +12,13 @@ import '../../preference/seerr_row_config.dart';
 import '../../preference/user_preferences.dart';
 import '../../util/platform_detection.dart';
 
-class PluginSyncService {
+class PluginSyncService extends ChangeNotifier {
+  static const List<String> supportedProfiles = <String>[
+    'desktop',
+    'mobile',
+    'tv',
+  ];
+
   final UserPreferences _prefs;
   final PreferenceStore _store;
   final _dio = Dio();
@@ -20,6 +27,11 @@ class PluginSyncService {
 
   bool _pluginAvailable = false;
   bool get pluginAvailable => _pluginAvailable;
+
+  String? _pluginVersion;
+  String? get pluginVersion => _pluginVersion;
+
+  String? _selectedCustomizationProfile;
 
   String? _seerrUrl;
   String? get seerrUrl => _seerrUrl;
@@ -33,42 +45,137 @@ class PluginSyncService {
 
   PluginSyncService(this._prefs, this._store);
 
+  dynamic _readValue(Map<String, dynamic> data, String key) {
+    if (data.containsKey(key)) {
+      return data[key];
+    }
+
+    if (key.isNotEmpty) {
+      final pascal = '${key[0].toUpperCase()}${key.substring(1)}';
+      if (data.containsKey(pascal)) {
+        return data[pascal];
+      }
+    }
+
+    return null;
+  }
+
+  bool? _readBool(Map<String, dynamic> data, String key) {
+    final value = _readValue(data, key);
+    return value is bool ? value : null;
+  }
+
+  String? _readString(Map<String, dynamic> data, String key) {
+    final value = _readValue(data, key);
+    return value is String ? value : null;
+  }
+
+  void resetState({bool notify = true}) {
+    _pluginAvailable = false;
+    _pluginVersion = null;
+    _seerrUrl = null;
+    _seerrEnabled = false;
+    _mdblistAvailable = false;
+    _tmdbAvailable = false;
+    if (notify) {
+      _setLocalSeerrEnabled(false);
+    }
+    if (notify) {
+      notifyListeners();
+    }
+  }
+
+  void _setLocalSeerrEnabled(bool enabled) {
+    if (_prefs.get(UserPreferences.seerrEnabled) == enabled) {
+      return;
+    }
+    _store.set(UserPreferences.seerrEnabled, enabled);
+    _prefs.notifyPreferenceChanged();
+  }
+
+  Future<bool> refreshAvailability(MediaServerClient client) async {
+    resetState(notify: false);
+
+    try {
+      final pingResult = await _ping(client);
+      if (pingResult == null) {
+        _setLocalSeerrEnabled(false);
+        notifyListeners();
+        return false;
+      }
+
+      final installed = _readBool(pingResult, 'installed');
+      if (installed != null && !installed) {
+        _setLocalSeerrEnabled(false);
+        notifyListeners();
+        return false;
+      }
+
+      final syncEnabled = _readBool(pingResult, 'settingsSyncEnabled');
+      if (syncEnabled != null && !syncEnabled) {
+        _setLocalSeerrEnabled(false);
+        notifyListeners();
+        return false;
+      }
+
+      _pluginAvailable = true;
+      _pluginVersion = _readString(pingResult, 'version');
+      _seerrUrl = _readString(pingResult, 'jellyseerrUrl');
+      _seerrEnabled = _readBool(pingResult, 'jellyseerrEnabled') ?? false;
+      _mdblistAvailable = _readBool(pingResult, 'mdblistAvailable') ?? false;
+      _tmdbAvailable = _readBool(pingResult, 'tmdbAvailable') ?? false;
+
+      final seerrConfig = await _fetchJellyseerrConfig(client);
+      if (seerrConfig != null) {
+        _seerrUrl = _readString(seerrConfig, 'url') ?? _seerrUrl;
+
+        final enabled = _readBool(seerrConfig, 'enabled');
+        final userEnabled = _readBool(seerrConfig, 'userEnabled');
+        _seerrEnabled = (enabled ?? _seerrEnabled) && (userEnabled ?? true);
+
+        final variant = _readString(seerrConfig, 'variant');
+        if (variant != null && variant.trim().isNotEmpty) {
+          await _seerrPrefs.setMoonfinVariant(variant);
+        }
+
+        final displayName = _readString(seerrConfig, 'displayName');
+        if (displayName != null && displayName.trim().isNotEmpty) {
+          await _seerrPrefs.setMoonfinDisplayName(displayName);
+        }
+      }
+
+      _setLocalSeerrEnabled(_seerrEnabled);
+
+      notifyListeners();
+      return true;
+    } catch (_) {
+      resetState();
+      return false;
+    }
+  }
+
   String get _profileName {
     if (PlatformDetection.isTV) return 'tv';
     if (PlatformDetection.useMobileUi) return 'mobile';
     return 'desktop';
   }
 
+  String get currentDeviceProfile => _profileName;
+  String get selectedCustomizationProfile =>
+      _selectedCustomizationProfile ?? _profileName;
+
+  void setSelectedCustomizationProfile(String profile) {
+    if (!supportedProfiles.contains(profile)) return;
+    if (_selectedCustomizationProfile == profile) return;
+    _selectedCustomizationProfile = profile;
+    notifyListeners();
+  }
+
   Future<void> syncOnLogin(MediaServerClient client) async {
     try {
-      final pingResult = await _ping(client);
-      if (pingResult == null) {
-        _pluginAvailable = false;
+      final available = await refreshAvailability(client);
+      if (!available) {
         return;
-      }
-      _pluginAvailable = true;
-      _seerrUrl = pingResult['jellyseerrUrl'] as String?;
-      _seerrEnabled = pingResult['jellyseerrEnabled'] as bool? ?? false;
-      _mdblistAvailable = pingResult['mdblistAvailable'] as bool? ?? false;
-      _tmdbAvailable = pingResult['tmdbAvailable'] as bool? ?? false;
-
-      final seerrConfig = await _fetchJellyseerrConfig(client);
-      if (seerrConfig != null) {
-        _seerrUrl = seerrConfig['url'] as String? ?? _seerrUrl;
-
-        final enabled = seerrConfig['enabled'] as bool?;
-        final userEnabled = seerrConfig['userEnabled'] as bool?;
-        _seerrEnabled = (enabled ?? _seerrEnabled) && (userEnabled ?? true);
-
-        final variant = seerrConfig['variant'] as String?;
-        if (variant != null && variant.trim().isNotEmpty) {
-          await _seerrPrefs.setMoonfinVariant(variant);
-        }
-
-        final displayName = seerrConfig['displayName'] as String?;
-        if (displayName != null && displayName.trim().isNotEmpty) {
-          await _seerrPrefs.setMoonfinDisplayName(displayName);
-        }
       }
 
       final neverConfigured = !_store.containsKey(UserPreferences.pluginSyncEnabled.key);
@@ -84,7 +191,9 @@ class PluginSyncService {
       }
 
       _applyServerSettings(resolved);
-    } catch (_) {}
+    } catch (_) {
+      resetState();
+    }
   }
 
   Future<void> configureSeerr(
@@ -118,23 +227,48 @@ class PluginSyncService {
   }
 
   Future<void> pushSettings(MediaServerClient client) async {
+    await pushSettingsForProfile(client, profile: selectedCustomizationProfile);
+  }
+
+  Future<void> pushSettingsForProfile(
+    MediaServerClient client, {
+    required String profile,
+  }) async {
     if (!_pluginAvailable) return;
     if (!_prefs.get(UserPreferences.pluginSyncEnabled)) return;
 
+    if (!supportedProfiles.contains(profile)) return;
+
     try {
-      final profile = _buildProfileFromLocal();
+      final payloadProfile = _buildProfileFromLocal();
       final token = client.accessToken;
       if (token == null) return;
 
       await _dio.post(
-        '${client.baseUrl}/Moonfin/Settings/Profile/$_profileName',
-        data: {'profile': profile, 'clientId': 'moonfin-flutter'},
+        '${client.baseUrl}/Moonfin/Settings/Profile/$profile',
+        data: {'profile': payloadProfile, 'clientId': 'moonfin-flutter'},
         options: Options(headers: {
           'Authorization': 'MediaBrowser Token="$token"',
           'Content-Type': 'application/json',
         }),
       );
     } catch (_) {}
+  }
+
+  Future<bool> pullSettingsForProfile(
+    MediaServerClient client, {
+    required String profile,
+  }) async {
+    if (!supportedProfiles.contains(profile)) return false;
+    if (!_pluginAvailable) return false;
+
+    final resolved = await _fetchResolvedProfile(client, profile);
+    if (resolved == null) {
+      return false;
+    }
+
+    _applyServerSettings(resolved);
+    return true;
   }
 
   Future<Map<String, dynamic>?> _ping(MediaServerClient client) async {

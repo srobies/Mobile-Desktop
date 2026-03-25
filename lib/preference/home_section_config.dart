@@ -39,12 +39,12 @@ class HomeSectionConfig {
       );
 
   static List<HomeSectionConfig> defaults() => const [
-        HomeSectionConfig(type: HomeSectionType.resume, enabled: true, order: 0),
-        HomeSectionConfig(type: HomeSectionType.nextUp, enabled: true, order: 1),
-        HomeSectionConfig(type: HomeSectionType.liveTv, enabled: true, order: 2),
-        HomeSectionConfig(type: HomeSectionType.latestMedia, enabled: true, order: 3),
+      HomeSectionConfig(type: HomeSectionType.libraryTilesSmall, enabled: true, order: 0),
+      HomeSectionConfig(type: HomeSectionType.resume, enabled: true, order: 1),
+      HomeSectionConfig(type: HomeSectionType.nextUp, enabled: true, order: 2),
+      HomeSectionConfig(type: HomeSectionType.latestMedia, enabled: true, order: 3),
         HomeSectionConfig(type: HomeSectionType.recentlyReleased, enabled: false, order: 4),
-        HomeSectionConfig(type: HomeSectionType.libraryTilesSmall, enabled: false, order: 5),
+      HomeSectionConfig(type: HomeSectionType.liveTv, enabled: false, order: 5),
         HomeSectionConfig(type: HomeSectionType.libraryButtons, enabled: false, order: 6),
         HomeSectionConfig(type: HomeSectionType.resumeAudio, enabled: false, order: 7),
         HomeSectionConfig(type: HomeSectionType.resumeBook, enabled: false, order: 8),

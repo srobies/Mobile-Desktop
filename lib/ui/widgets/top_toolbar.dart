@@ -11,6 +11,7 @@ import '../../auth/repositories/user_repository.dart';
 import '../../data/models/aggregated_library.dart';
 import '../../data/repositories/multi_server_repository.dart';
 import '../../data/repositories/user_views_repository.dart';
+import '../../data/services/plugin_sync_service.dart';
 import '../../preference/preference_constants.dart';
 import '../../preference/seerr_preferences.dart';
 import '../../preference/user_preferences.dart';
@@ -402,7 +403,8 @@ class _TopToolbarState extends State<TopToolbar> {
                   ),
                 ),
               ],
-              if (_prefs.get(UserPreferences.seerrEnabled)) ...[
+              if (GetIt.instance<PluginSyncService>().pluginAvailable &&
+                  _prefs.get(UserPreferences.seerrEnabled)) ...[
                 _gap(),
                 _orderButton(
                   order: (order++).toDouble(),
@@ -570,6 +572,9 @@ class _LibrariesDropdownState extends State<_LibrariesDropdown> {
   }
 
   Widget _buildOverlay(BuildContext context) {
+    final screenHeight = MediaQuery.of(context).size.height;
+    final maxMenuHeight = (screenHeight - 120).clamp(220.0, 520.0);
+
     return CompositedTransformFollower(
       link: _layerLink,
       targetAnchor: _openToLeft ? Alignment.bottomRight : Alignment.bottomLeft,
@@ -596,6 +601,7 @@ class _LibrariesDropdownState extends State<_LibrariesDropdown> {
                   constraints: BoxConstraints(
                     minWidth: 180,
                     maxWidth: _menuWidth,
+                    maxHeight: maxMenuHeight,
                   ),
                   decoration: BoxDecoration(
                     color: widget.surfaceColor,
@@ -609,10 +615,13 @@ class _LibrariesDropdownState extends State<_LibrariesDropdown> {
                     ],
                   ),
                   padding: const EdgeInsets.symmetric(vertical: 6),
-                  child: IntrinsicWidth(
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      crossAxisAlignment: CrossAxisAlignment.stretch,
+                  child: ScrollConfiguration(
+                    behavior: const MaterialScrollBehavior().copyWith(
+                      scrollbars: false,
+                    ),
+                    child: ListView(
+                      shrinkWrap: true,
+                      padding: EdgeInsets.zero,
                       children: widget.libraries
                           .map((lib) => _LibraryDropdownItem(
                                 name: lib.name,

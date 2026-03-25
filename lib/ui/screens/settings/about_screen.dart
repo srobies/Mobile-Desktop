@@ -1,6 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:url_launcher/url_launcher.dart';
 
+import '../../../preference/user_preferences.dart';
+import '../../../util/platform_detection.dart';
+import '../../widgets/settings/preference_tiles.dart';
+
 class AboutScreen extends StatelessWidget {
   const AboutScreen({super.key});
 
@@ -35,6 +39,15 @@ class AboutScreen extends StatelessWidget {
             subtitle: const Text('https://github.com/Moonfin-Client/Mobile-Desktop'),
             onTap: () => launchUrl(Uri.parse('https://github.com/Moonfin-Client/Mobile-Desktop')),
           ),
+          if (PlatformDetection.isDesktop) ...[
+            const Divider(),
+            SwitchPreferenceTile(
+              preference: UserPreferences.updateNotificationsEnabled,
+              title: 'Update Notifications',
+              subtitle: 'Show when updates are available',
+              icon: Icons.system_update,
+            ),
+          ],
         ],
       ),
     );
