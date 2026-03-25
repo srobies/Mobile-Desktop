@@ -1161,7 +1161,7 @@ class _DownloadedBadgeState extends State<_DownloadedBadge> {
       bottom: 8,
       left: 6,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 3),
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
         decoration: BoxDecoration(
           color: const Color(0xFF4CAF50),
           borderRadius: BorderRadius.circular(4),
@@ -1175,9 +1175,11 @@ class _DownloadedBadgeState extends State<_DownloadedBadge> {
               'Downloaded',
               style: TextStyle(
                 color: Colors.white,
-                fontSize: 10,
+                fontSize: 11,
                 fontWeight: FontWeight.w600,
+                overflow: TextOverflow.clip,
               ),
+              maxLines: 1,
             ),
           ],
         ),
@@ -1672,8 +1674,6 @@ class _ActionButtonsState extends State<_ActionButtons> {
         _DetailActionButton(
           label: isBook
               ? 'Read Offline'
-              : _offlineRow!.qualityPreset != 'original'
-              ? 'Play Offline (${_offlineRow!.qualityPreset})'
               : 'Play Offline',
           icon: isBook ? Icons.menu_book : Icons.offline_pin,
           onPressed: () async {
