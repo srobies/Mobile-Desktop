@@ -47,6 +47,15 @@ class PlaybackManager {
     _offlineMetadataByUrl = metadata;
   }
 
+  List<Map<String, dynamic>> get _currentMediaStreams {
+    final resStreams = _currentResolution?.mediaStreams;
+    if (resStreams != null) return resStreams;
+    final url = queueService.currentItem;
+    if (url is! String) return const [];
+    final meta = _offlineMetadataByUrl[url];
+    return (meta?['MediaStreams'] as List?)?.cast<Map<String, dynamic>>() ?? const [];
+  }
+
   void setBackend(PlayerBackend backend) {
     _disposeStreamSubs();
     _backend?.dispose();
@@ -374,7 +383,7 @@ class PlaybackManager {
   Future<void> changeAudioTrack(int streamIndex) async {
     _audioStreamIndex = streamIndex;
 
-    if (_currentResolution?.playMethod == StreamPlayMethod.directPlay) {
+    if (_currentResolution?.playMethod == StreamPlayMethod.directPlay || _isOfflinePlayback) {
       final mpvId = _mpvTrackIdForStream(streamIndex, 'Audio');
       if (mpvId != null) {
         await _backend?.setAudioTrack(mpvId);
@@ -387,8 +396,8 @@ class PlaybackManager {
   static const _bitmapSubCodecs = {'pgs', 'pgssub', 'dvbsub', 'dvdsub', 'hdmv_pgs_subtitle', 'dvd_subtitle', 'dvb_subtitle', 'xsub'};
 
   bool _isSubtitleBitmap(int streamIndex) {
-    final streams = _currentResolution?.mediaStreams;
-    if (streams == null) return false;
+    final streams = _currentMediaStreams;
+    if (streams.isEmpty) return false;
     final sub = streams.where((s) => s['Type'] == 'Subtitle').firstWhere(
       (s) => s['Index'] == streamIndex,
       orElse: () => <String, dynamic>{},
@@ -401,10 +410,12 @@ class PlaybackManager {
     final isBitmap = _isSubtitleBitmap(streamIndex);
     _subtitleStreamIndex = streamIndex;
 
-    if (_currentResolution?.playMethod == StreamPlayMethod.directPlay) {
+    if (_currentResolution?.playMethod == StreamPlayMethod.directPlay || _isOfflinePlayback) {
       if (isBitmap && !(_backend?.canRenderBitmapSubtitles ?? false)) {
         await _backend?.disableSubtitleTrack();
-        await _reResolveAtCurrentPosition(forceTranscode: true);
+        if (!_isOfflinePlayback) {
+          await _reResolveAtCurrentPosition(forceTranscode: true);
+        }
         return;
       }
       final mpvId = _mpvTrackIdForStream(streamIndex, 'Subtitle');
@@ -506,8 +517,8 @@ class PlaybackManager {
 
   /// Maps a Jellyfin stream Index to an mpv track ID (1-indexed among same-type tracks).
   int? _mpvTrackIdForStream(int streamIndex, String type) {
-    final streams = _currentResolution?.mediaStreams;
-    if (streams == null) {
+    final streams = _currentMediaStreams;
+    if (streams.isEmpty) {
       return null;
     }
     final typeStreams = streams.where((s) => s['Type'] == type).toList();

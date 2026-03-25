@@ -1449,7 +1449,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   void _showTrackSelector({required bool audio}) {
     final resolution = _manager.currentResolution;
     final streamType = audio ? 'Audio' : 'Subtitle';
-    final allStreams = resolution?.mediaStreams ?? const <Map<String, dynamic>>[];
+    final offlineMeta = _manager.currentOfflineMetadata;
+    final allStreams = resolution?.mediaStreams
+      ?? (offlineMeta?['MediaStreams'] as List?)?.cast<Map<String, dynamic>>()
+      ?? const <Map<String, dynamic>>[];
     final streams = allStreams
         .where((s) => s['Type'] == streamType)
         .toList();
@@ -2006,12 +2009,14 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   void _showStreamInfo() {
     final resolution = _manager.currentResolution;
     final playMethod = resolution?.playMethod;
-    final methodLabel = switch (playMethod) {
-      StreamPlayMethod.directPlay => 'Direct Play',
-      StreamPlayMethod.directStream => 'Direct Stream',
-      StreamPlayMethod.transcode => 'Transcoding',
-      _ => 'Unknown',
-    };
+    final methodLabel = _manager.isOfflinePlayback
+        ? 'Direct Play'
+        : switch (playMethod) {
+            StreamPlayMethod.directPlay => 'Direct Play',
+            StreamPlayMethod.directStream => 'Direct Stream',
+            StreamPlayMethod.transcode => 'Transcoding',
+            _ => 'Unknown',
+          };
 
     final item = _queue.currentItem;
     Map<String, dynamic>? mediaSource;
@@ -2019,13 +2024,40 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     Map<String, dynamic>? audioStream;
     Map<String, dynamic>? subtitleStream;
 
+    Map<String, dynamic>? pickStream(
+      List<Map<String, dynamic>> streams,
+      String type,
+      int? preferredIndex,
+    ) {
+      if (preferredIndex != null && preferredIndex >= 0) {
+        final preferred = streams
+            .where((s) => s['Type'] == type)
+            .firstWhere(
+              (s) => s['Index'] == preferredIndex,
+              orElse: () => const <String, dynamic>{},
+            );
+        if (preferred.isNotEmpty) {
+          return preferred;
+        }
+      }
+
+      return streams
+              .where((s) => s['Type'] == type && s['IsDefault'] == true)
+              .firstOrNull ??
+          streams.where((s) => s['Type'] == type).firstOrNull;
+    }
+
+    void populateStreams(List<Map<String, dynamic>> streams) {
+      videoStream = streams.where((s) => s['Type'] == 'Video').firstOrNull;
+      audioStream = pickStream(streams, 'Audio', _manager.audioStreamIndex);
+      subtitleStream = _manager.subtitleStreamIndex == -1
+          ? null
+          : pickStream(streams, 'Subtitle', _manager.subtitleStreamIndex);
+    }
+
     if (item is AggregatedItem) {
       final streams = resolution?.mediaStreams ?? item.mediaStreams;
-
-      videoStream = streams.where((s) => s['Type'] == 'Video').firstOrNull;
-      audioStream = streams.where((s) => s['Type'] == 'Audio' && s['IsDefault'] == true).firstOrNull
-                    ?? streams.where((s) => s['Type'] == 'Audio').firstOrNull;
-      subtitleStream = streams.where((s) => s['Type'] == 'Subtitle' && s['IsDefault'] == true).firstOrNull;
+      populateStreams(streams);
 
       final sourceId = resolution?.mediaSourceId;
       final sources = item.mediaSources;
@@ -2036,6 +2068,16 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         );
       } else if (sources.isNotEmpty) {
         mediaSource = sources.first;
+      }
+    } else if (item is String) {
+      final meta = _manager.currentOfflineMetadata;
+      if (meta != null) {
+        final streams = (meta['MediaStreams'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        populateStreams(streams);
+        final sources = meta['MediaSources'] as List?;
+        if (sources != null && sources.isNotEmpty) {
+          mediaSource = sources.first as Map<String, dynamic>?;
+        }
       }
     }
 
@@ -2117,39 +2159,39 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
               infoRow('Container', container),
               infoRow('Bitrate', _formatBitrate(bitrate)),
 
-              if (videoStream != null) ...[
+              if (videoStream case final video?) ...[
                 sectionHeader('Video'),
                 infoRow(
                   'Resolution',
-                  '${videoStream['Width']}×${videoStream['Height']}'
-                  '${videoStream['RealFrameRate'] != null ? ' @ ${(videoStream['RealFrameRate'] as num).round()}fps' : ''}',
+                  '${video['Width']}×${video['Height']}'
+                  '${video['RealFrameRate'] != null ? ' @ ${(video['RealFrameRate'] as num).round()}fps' : ''}',
                 ),
-                infoRow('HDR', _getHdrType(videoStream)),
-                infoRow('Codec', _formatVideoCodec(videoStream)),
-                if (videoStream['BitRate'] != null)
-                  infoRow('Video Bitrate', _formatBitrate(videoStream['BitRate'] as int?)),
+                infoRow('HDR', _getHdrType(video)),
+                infoRow('Codec', _formatVideoCodec(video)),
+                if (video['BitRate'] != null)
+                  infoRow('Video Bitrate', _formatBitrate(video['BitRate'] as int?)),
               ],
 
-              if (audioStream != null) ...[
+              if (audioStream case final audio?) ...[
                 sectionHeader('Audio'),
-                infoRow('Track', audioStream['DisplayTitle'] as String?
-                    ?? audioStream['Language'] as String?
+                infoRow('Track', audio['DisplayTitle'] as String?
+                    ?? audio['Language'] as String?
                     ?? 'Unknown'),
-                infoRow('Codec', _formatAudioCodec(audioStream)),
-                infoRow('Channels', _formatChannels(audioStream['Channels'] as int?)),
-                if (audioStream['BitRate'] != null)
-                  infoRow('Audio Bitrate', _formatBitrate(audioStream['BitRate'] as int?)),
-                if (audioStream['SampleRate'] != null)
-                  infoRow('Sample Rate', '${((audioStream['SampleRate'] as num) / 1000).toStringAsFixed(1)} kHz'),
+                infoRow('Codec', _formatAudioCodec(audio)),
+                infoRow('Channels', _formatChannels(audio['Channels'] as int?)),
+                if (audio['BitRate'] != null)
+                  infoRow('Audio Bitrate', _formatBitrate(audio['BitRate'] as int?)),
+                if (audio['SampleRate'] != null)
+                  infoRow('Sample Rate', '${((audio['SampleRate'] as num) / 1000).toStringAsFixed(1)} kHz'),
               ],
 
-              if (subtitleStream != null) ...[
+              if (subtitleStream case final subtitle?) ...[
                 sectionHeader('Subtitles'),
-                infoRow('Track', subtitleStream['DisplayTitle'] as String?
-                    ?? subtitleStream['Language'] as String?
+                infoRow('Track', subtitle['DisplayTitle'] as String?
+                    ?? subtitle['Language'] as String?
                     ?? 'Unknown'),
-                infoRow('Format', ((subtitleStream['Codec'] as String?) ?? 'Unknown').toUpperCase()),
-                infoRow('Type', subtitleStream['IsExternal'] == true ? 'External' : 'Embedded'),
+                infoRow('Format', ((subtitle['Codec'] as String?) ?? 'Unknown').toUpperCase()),
+                infoRow('Type', subtitle['IsExternal'] == true ? 'External' : 'Embedded'),
               ],
 
               const SizedBox(height: AppSpacing.spaceLg),
