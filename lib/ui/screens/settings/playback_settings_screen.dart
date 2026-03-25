@@ -74,6 +74,7 @@ class PlaybackSettingsScreen extends StatelessWidget {
           SwitchPreferenceTile(
             preference: UserPreferences.showDescriptionOnPause,
             title: 'Show Description on Pause',
+            subtitle: 'Dim video and show overview text while paused',
             icon: Icons.description,
           ),
           _section(context, 'Audio'),

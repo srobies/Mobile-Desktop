@@ -666,9 +666,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
                   const Positioned.fill(
                     child: ColoredBox(color: Colors.black),
                   ),
+                _buildPausedDescriptionOverlay(),
                 if (_controlsVisible) ...[
                   _buildTopOverlay(context),
                   _buildBottomOverlay(context),
+                  Positioned.fill(
+                    child: Center(
+                      child: _buildCenterTransportControls(),
+                    ),
+                  ),
                 ],
                 _buildCastMiniBar(),
                 _buildBufferingIndicator(),
@@ -737,6 +743,136 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         );
       },
     );
+  }
+
+  Widget _buildPausedDescriptionOverlay() {
+    if (!_prefs.get(UserPreferences.showDescriptionOnPause)) {
+      return const SizedBox.shrink();
+    }
+    final description = _currentItemDescription();
+    if (description == null) return const SizedBox.shrink();
+    final title = _currentItemTitle();
+    return StreamBuilder<bool>(
+      stream: _state.playingStream,
+      initialData: _state.isPlaying,
+      builder: (context, snap) {
+        final isPlaying = snap.data ?? false;
+        return Positioned.fill(
+          child: IgnorePointer(
+            child: AnimatedOpacity(
+              duration: const Duration(milliseconds: 220),
+              opacity: isPlaying ? 0.0 : 1.0,
+              child: Container(
+                color: Colors.black.withValues(alpha: 0.58),
+                child: SafeArea(
+                  child: Center(
+                    child: ConstrainedBox(
+                      constraints: const BoxConstraints(maxWidth: 960),
+                      child: Padding(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: AppSpacing.spaceXl,
+                          vertical: AppSpacing.spaceLg,
+                        ),
+                        child: DecoratedBox(
+                          decoration: BoxDecoration(
+                            color: const Color(0xCC111111),
+                            borderRadius: BorderRadius.circular(18),
+                            border: Border.all(
+                              color: Colors.white.withValues(alpha: 0.18),
+                            ),
+                          ),
+                          child: Padding(
+                            padding: const EdgeInsets.all(AppSpacing.spaceXl),
+                            child: SingleChildScrollView(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.center,
+                                mainAxisSize: MainAxisSize.min,
+                                children: [
+                                  if (title.isNotEmpty)
+                                    Text(
+                                      title,
+                                      textAlign: TextAlign.center,
+                                      style: const TextStyle(
+                                        color: Colors.white,
+                                        fontSize: AppTypography.fontSizeXl,
+                                        fontWeight: FontWeight.w700,
+                                        height: 1.2,
+                                      ),
+                                    ),
+                                  if (title.isNotEmpty)
+                                    const SizedBox(height: AppSpacing.spaceMd),
+                                  Text(
+                                    description,
+                                    style: const TextStyle(
+                                      color: Colors.white,
+                                      fontSize: AppTypography.fontSizeLg,
+                                      height: 1.45,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+
+  String _currentItemTitle() {
+    final item = _queue.currentItem;
+    if (item is AggregatedItem) {
+      return _firstNonEmptyText([item.seriesName, item.name]) ?? '';
+    }
+    if (item is Map) {
+      return _firstNonEmptyText([
+        item['SeriesName'] as String?,
+        item['Name'] as String?,
+      ]) ?? '';
+    }
+    if (item is String) {
+      final meta = _manager.currentOfflineMetadata;
+      return _firstNonEmptyText([
+        meta?['SeriesName'] as String?,
+        meta?['Name'] as String?,
+      ]) ?? item.split('/').last;
+    }
+    return '';
+  }
+
+  String? _currentItemDescription() {
+    final item = _queue.currentItem;
+    if (item is AggregatedItem) {
+      return _firstNonEmptyText([item.overview, item.tagline]);
+    }
+    if (item is Map) {
+      return _firstNonEmptyText([
+        item['Overview'] as String?,
+        (item['Taglines'] as List?)?.firstOrNull as String?,
+      ]);
+    }
+    if (item is String) {
+      final meta = _manager.currentOfflineMetadata;
+      return _firstNonEmptyText([
+        meta?['Overview'] as String?,
+        (meta?['Taglines'] as List?)?.firstOrNull as String?,
+      ]);
+    }
+    return null;
+  }
+
+  String? _firstNonEmptyText(List<String?> candidates) {
+    for (final s in candidates) {
+      if (s != null && s.isNotEmpty) return s;
+    }
+    return null;
   }
 
   Widget _buildTopOverlay(BuildContext context) {
@@ -1030,146 +1166,176 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
   }
 
   Widget _buildControlButtons() {
-    final item = _queue.currentItem;
-    final hasChapters = item is AggregatedItem && item.chapters.isNotEmpty;
-    final hasCast = item is AggregatedItem && item.people.isNotEmpty;
+    return ValueListenableBuilder<CastTargetKind?>(
+      valueListenable: _castService.activeKindNotifier,
+      builder: (context, activeCastKind, _) {
+        final item = _queue.currentItem;
+        final hasChapters = item is AggregatedItem && item.chapters.isNotEmpty;
+        final hasCast = item is AggregatedItem && item.people.isNotEmpty;
+        final isLandscape =
+            MediaQuery.of(context).orientation == Orientation.landscape;
+        final secondaryIconSize = isLandscape ? 28.0 : 24.0;
+        final secondaryExtent = isLandscape ? 56.0 : 48.0;
+        final secondaryTextSize =
+            isLandscape ? AppTypography.fontSizeMd : AppTypography.fontSizeSm;
 
+        final secondaryButtons = <Widget>[
+          _buildSpeedButton(extent: secondaryExtent, textSize: secondaryTextSize),
+          if (hasChapters)
+            _controlButton(
+              Icons.bookmark_outline_rounded,
+              onPressed: _showChapters,
+              size: secondaryIconSize,
+              extent: secondaryExtent,
+            ),
+          _controlButton(
+            Icons.subtitles_outlined,
+            onPressed: () => _showTrackSelector(audio: false),
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+          _controlButton(
+            Icons.audiotrack_outlined,
+            onPressed: () => _showTrackSelector(audio: true),
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+          _controlButton(
+            Icons.timer_outlined,
+            onPressed: () => _showDelayAdjuster(audio: false),
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+          _controlButton(
+            Icons.schedule_rounded,
+            onPressed: () => _showDelayAdjuster(audio: true),
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+          if (hasCast)
+            _controlButton(
+              Icons.people_outline_rounded,
+              onPressed: _showCast,
+              size: secondaryIconSize,
+              extent: secondaryExtent,
+            ),
+          _controlButton(
+            Icons.cast,
+            onPressed: _castToDevice,
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+          if (activeCastKind != null)
+            _controlButton(
+              switch (activeCastKind) {
+                CastTargetKind.googleCast => Icons.cast_connected,
+                CastTargetKind.airPlay => Icons.airplay,
+                _ => Icons.router,
+              },
+              onPressed: _showCastControls,
+              size: secondaryIconSize,
+              extent: secondaryExtent,
+            ),
+          if (_manager.currentResolution?.playMethod == StreamPlayMethod.transcode)
+            _buildBitrateButton(
+              extent: secondaryExtent,
+              iconSize: secondaryIconSize,
+            ),
+          _buildZoomButton(size: secondaryIconSize, extent: secondaryExtent),
+          _controlButton(
+            Icons.info_outline_rounded,
+            onPressed: _showStreamInfo,
+            size: secondaryIconSize,
+            extent: secondaryExtent,
+          ),
+        ];
+
+        final estimatedWidth = secondaryButtons.length * (secondaryExtent + 8);
+
+        return LayoutBuilder(
+          builder: (context, constraints) {
+            final canFitLandscapeRow =
+                isLandscape && estimatedWidth <= constraints.maxWidth;
+
+            if (canFitLandscapeRow) {
+              return SizedBox(
+                height: secondaryExtent,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                  children: secondaryButtons,
+                ),
+              );
+            }
+
+            return SizedBox(
+              height: secondaryExtent,
+              child: SingleChildScrollView(
+                scrollDirection: Axis.horizontal,
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    for (final button in secondaryButtons)
+                      Padding(
+                        padding: const EdgeInsets.symmetric(horizontal: 2),
+                        child: button,
+                      ),
+                  ],
+                ),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildCenterTransportControls() {
     return StreamBuilder<bool>(
       stream: _state.playingStream,
       initialData: _state.isPlaying,
       builder: (context, snap) {
         final isPlaying = snap.data ?? false;
 
-        final transportButtons = <Widget>[
-          if (_queue.hasPrevious)
+        return Row(
+          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            if (_queue.hasPrevious)
+              _controlButton(
+                Icons.skip_previous_rounded,
+                onPressed: _manager.previous,
+                size: 40,
+                extent: 72,
+              ),
             _controlButton(
-              Icons.skip_previous_rounded,
-              onPressed: _manager.previous,
-              size: 28,
+              Icons.replay_10_rounded,
+              onPressed: () => _seekRelative(
+                  -_prefs.get(UserPreferences.skipBackLength)),
+              size: 46,
+              extent: 78,
             ),
-          _controlButton(
-            Icons.replay_10_rounded,
-            onPressed: () => _seekRelative(
-                -_prefs.get(UserPreferences.skipBackLength)),
-            size: 32,
-          ),
-          _controlButton(
-            isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
-            onPressed: () =>
-                isPlaying ? _manager.pause() : _manager.resume(),
-            size: 48,
-          ),
-          _controlButton(
-            Icons.forward_30_rounded,
-            onPressed: () => _seekRelative(
-                _prefs.get(UserPreferences.skipForwardLength)),
-            size: 32,
-          ),
-          if (_queue.hasNext)
             _controlButton(
-              Icons.skip_next_rounded,
-              onPressed: _manager.next,
-              size: 28,
+              isPlaying ? Icons.pause_rounded : Icons.play_arrow_rounded,
+              onPressed: () =>
+                  isPlaying ? _manager.pause() : _manager.resume(),
+              size: 64,
+              extent: 92,
             ),
-        ];
-
-        final secondaryButtons = <Widget>[
-          _buildSpeedButton(),
-          if (hasChapters)
             _controlButton(
-              Icons.bookmark_outline_rounded,
-              onPressed: _showChapters,
+              Icons.forward_30_rounded,
+              onPressed: () => _seekRelative(
+                  _prefs.get(UserPreferences.skipForwardLength)),
+              size: 46,
+              extent: 78,
             ),
-          _controlButton(
-            Icons.subtitles_outlined,
-            onPressed: () => _showTrackSelector(audio: false),
-          ),
-          _controlButton(
-            Icons.audiotrack_outlined,
-            onPressed: () => _showTrackSelector(audio: true),
-          ),
-          _controlButton(
-            Icons.timer_outlined,
-            onPressed: () => _showDelayAdjuster(audio: false),
-          ),
-          _controlButton(
-            Icons.schedule_rounded,
-            onPressed: () => _showDelayAdjuster(audio: true),
-          ),
-          if (hasCast)
-            _controlButton(
-              Icons.people_outline_rounded,
-              onPressed: _showCast,
-            ),
-          _controlButton(
-            Icons.cast,
-            onPressed: _castToDevice,
-          ),
-          ValueListenableBuilder<CastTargetKind?>(
-            valueListenable: _castService.activeKindNotifier,
-            builder: (context, kind, _) {
-              if (kind == null) return const SizedBox.shrink();
-              return _controlButton(
-                switch (kind) {
-                  CastTargetKind.googleCast => Icons.cast_connected,
-                  CastTargetKind.airPlay => Icons.airplay,
-                  _ => Icons.router,
-                },
-                onPressed: _showCastControls,
-              );
-            },
-          ),
-          if (_manager.currentResolution?.playMethod == StreamPlayMethod.transcode)
-            _buildBitrateButton(),
-          _buildZoomButton(),
-          _controlButton(
-            Icons.info_outline_rounded,
-            onPressed: _showStreamInfo,
-          ),
-        ];
-
-        return LayoutBuilder(
-          builder: (context, constraints) {
-            final orientation = MediaQuery.of(context).orientation;
-            final isCompact =
-                orientation == Orientation.portrait && constraints.maxWidth < 900;
-
-            if (!isCompact) {
-              return Row(
-                mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                children: [
-                  ...transportButtons,
-                  ...secondaryButtons,
-                ],
-              );
-            }
-
-            return Column(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.center,
-                  children: transportButtons,
-                ),
-                const SizedBox(height: AppSpacing.spaceXs),
-                SizedBox(
-                  height: 48,
-                  child: SingleChildScrollView(
-                    scrollDirection: Axis.horizontal,
-                    child: Row(
-                      children: [
-                        for (final button in secondaryButtons)
-                          Padding(
-                            padding: const EdgeInsets.symmetric(horizontal: 2),
-                            child: button,
-                          ),
-                      ],
-                    ),
-                  ),
-                ),
-              ],
-            );
-          },
+            if (_queue.hasNext)
+              _controlButton(
+                Icons.skip_next_rounded,
+                onPressed: _manager.next,
+                size: 40,
+                extent: 72,
+              ),
+          ],
         );
       },
     );
@@ -1179,10 +1345,11 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     IconData icon, {
     required VoidCallback onPressed,
     double size = 24,
+    double extent = 48,
   }) {
     return SizedBox(
-      width: 48,
-      height: 48,
+      width: extent,
+      height: extent,
       child: IconButton(
         onPressed: () {
           onPressed();
@@ -1195,10 +1362,13 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     );
   }
 
-  Widget _buildSpeedButton() {
+  Widget _buildSpeedButton({
+    double extent = 48,
+    double textSize = AppTypography.fontSizeSm,
+  }) {
     return SizedBox(
-      width: 48,
-      height: 48,
+      width: extent,
+      height: extent,
       child: PopupMenuButton<double>(
         onSelected: (speed) {
           _manager.setPlaybackSpeed(speed);
@@ -1222,9 +1392,9 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
         child: Center(
           child: Text(
             '${_state.playbackSpeed}x',
-            style: const TextStyle(
+            style: TextStyle(
               color: Colors.white,
-              fontSize: AppTypography.fontSizeSm,
+              fontSize: textSize,
             ),
           ),
         ),
@@ -1232,7 +1402,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     );
   }
 
-  Widget _buildBitrateButton() {
+  Widget _buildBitrateButton({
+    double extent = 48,
+    double iconSize = 24,
+  }) {
     // null means auto (profile default)
     final options = <int?>[null, 40, 20, 12, 8, 4, 2];
     final current = _manager.maxBitrateOverrideMbps;
@@ -1240,8 +1413,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     String label(int? mbps) => mbps == null ? 'Auto' : '$mbps Mbps';
 
     return SizedBox(
-      width: 48,
-      height: 48,
+      width: extent,
+      height: extent,
       child: PopupMenuButton<int?>(
         onSelected: (mbps) {
           _manager.changeBitrate(mbps);
@@ -1266,7 +1439,7 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
           child: Icon(
             Icons.high_quality_outlined,
             color: current != null ? AppColorScheme.accent : Colors.white,
-            size: 24,
+            size: iconSize,
           ),
         ),
       ),
@@ -1389,7 +1562,10 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     _showControls();
   }
 
-  Widget _buildZoomButton() {
+  Widget _buildZoomButton({
+    double size = 24,
+    double extent = 48,
+  }) {
     final icon = switch (_zoomMode) {
       ZoomMode.fit => Icons.fit_screen_rounded,
       ZoomMode.autoCrop => Icons.crop_rounded,
@@ -1397,6 +1573,8 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
     };
     return _controlButton(
       icon,
+      size: size,
+      extent: extent,
       onPressed: () {
         final modes = ZoomMode.values;
         final next = modes[(_zoomMode.index + 1) % modes.length];
