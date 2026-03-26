@@ -55,11 +55,13 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
 
   Player? _trailerPlayer;
   VideoController? _trailerController;
+  StreamSubscription<bool>? _trailerCompletedSub;
   Timer? _trailerRevealTimer;
   double _trailerVideoOpacity = 0.0;
   String? _activeTrailerItemId;
   int _trailerResolveId = 0;
   bool _trailerRevealArmed = false;
+  bool _isTrailerPlaying = false;
 
   @override
   void initState() {
@@ -85,6 +87,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
   void dispose() {
     _autoAdvanceTimer?.cancel();
     _trailerRevealTimer?.cancel();
+    _trailerCompletedSub?.cancel();
     _trailerPlayer?.stop();
     _trailerPlayer?.dispose();
     _pageController.dispose();
@@ -173,12 +176,19 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
     _autoAdvanceTimer?.cancel();
     if (!widget.prefs.get(UserPreferences.mediaBarAutoAdvance)) return;
     if (widget.externallyPaused) return;
+    if (_isTrailerPlaying) return;
     if (!_isHomeRouteActive) return;
     final intervalMs = widget.prefs.get(UserPreferences.mediaBarIntervalMs);
     _autoAdvanceTimer = Timer.periodic(
       Duration(milliseconds: intervalMs),
       (_) {
-        if (_isPaused || !mounted || widget.externallyPaused || !_isHomeRouteActive) return;
+        if (_isPaused ||
+            _isTrailerPlaying ||
+            !mounted ||
+            widget.externallyPaused ||
+            !_isHomeRouteActive) {
+          return;
+        }
         final items = widget.viewModel.items;
         if (items.isEmpty) return;
         final nextIndex = (_currentIndex + 1) % items.length;
@@ -234,13 +244,18 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
   }
 
   void _cancelTrailerPreview() {
+    final wasTrailerPlaying = _isTrailerPlaying;
     _trailerRevealTimer?.cancel();
     _trailerResolveId++;
     _trailerRevealArmed = false;
+    _isTrailerPlaying = false;
     _trailerPlayer?.stop();
     _activeTrailerItemId = null;
     if (_trailerVideoOpacity != 0.0) {
       setState(() => _trailerVideoOpacity = 0.0);
+    }
+    if (wasTrailerPlaying) {
+      _startAutoAdvance();
     }
   }
 
@@ -333,6 +348,9 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
     await player.play();
     if (!mounted || resolveId != _trailerResolveId) return;
 
+    _isTrailerPlaying = true;
+    _autoAdvanceTimer?.cancel();
+
     if (_trailerVideoOpacity != 1) {
       setState(() => _trailerVideoOpacity = 1);
     }
@@ -346,6 +364,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
       configuration: const PlayerConfiguration(libass: false),
     );
     _trailerPlayer = player;
+    _trailerCompletedSub = player.stream.completed.listen(_onTrailerCompleted);
     _trailerController = VideoController(
       player,
       configuration: VideoControllerConfiguration(
@@ -355,6 +374,20 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
       ),
     );
     return player;
+  }
+
+  void _onTrailerCompleted(bool completed) {
+    if (!completed || !mounted) return;
+    if (!_isTrailerPlaying || _activeTrailerItemId == null) return;
+
+    _cancelTrailerPreview();
+
+    if (!_isHomeRouteActive || widget.externallyPaused || _isPaused) return;
+    final items = widget.viewModel.items;
+    if (items.length <= 1) return;
+
+    final nextIndex = (_currentIndex + 1) % items.length;
+    _goToPage(nextIndex);
   }
 
   MediaServerClient _clientForServer(String serverId) {
@@ -430,10 +463,16 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
               child: Stack(
                 fit: StackFit.expand,
                 children: [
-                _BackdropLayer(
-                  items: items,
-                  pageController: _pageController,
-                  onPageChanged: _onPageChanged,
+                AnimatedOpacity(
+                  opacity: PlatformDetection.isLinux && _trailerVideoOpacity > 0
+                      ? 0
+                      : 1,
+                  duration: const Duration(milliseconds: 250),
+                  child: _BackdropLayer(
+                    items: items,
+                    pageController: _pageController,
+                    onPageChanged: _onPageChanged,
+                  ),
                 ),
                 if (_trailerController != null)
                   Positioned.fill(
