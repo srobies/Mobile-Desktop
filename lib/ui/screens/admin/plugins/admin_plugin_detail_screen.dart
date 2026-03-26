@@ -2,9 +2,13 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get_it/get_it.dart';
 import 'package:server_core/server_core.dart';
+import 'package:dio/dio.dart';
+import 'dart:convert';
+import 'dart:io';
 
 import '../admin_plugin_version_utils.dart';
 import '../providers/admin_user_providers.dart';
+import 'plugin_web_settings_screen.dart';
 
 final _packageInfoProvider =
     FutureProvider.family<PackageInfo?, String>((ref, pluginId) async {
@@ -31,10 +35,6 @@ class AdminPluginDetailScreen extends ConsumerStatefulWidget {
 
 class _AdminPluginDetailScreenState
     extends ConsumerState<AdminPluginDetailScreen> {
-  bool _loadingConfig = false;
-  Map<String, dynamic>? _config;
-  String? _configError;
-  bool _savingConfig = false;
   bool _toggling = false;
 
   AdminPluginsApi get _api =>
@@ -47,39 +47,28 @@ class _AdminPluginDetailScreenState
     return null;
   }
 
-  Future<void> _loadConfig(PluginInfo plugin) async {
-    if (plugin.configurationFileName == null) return;
-    setState(() {
-      _loadingConfig = true;
-      _configError = null;
-    });
-    try {
-      final config = await _api.getPluginConfiguration(plugin.id);
-      if (mounted) setState(() => _config = config);
-    } catch (e) {
-      if (mounted) setState(() => _configError = e.toString());
-    } finally {
-      if (mounted) setState(() => _loadingConfig = false);
-    }
-  }
+  Future<bool> _confirmExperimentalHtmlSettings() async {
+    final accepted = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Experimental Integration'),
+        content: const Text(
+          'Plugin settings integration is still experimental. Some fields or layouts may not render correctly yet.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(false),
+            child: const Text('Cancel'),
+          ),
+          FilledButton(
+            onPressed: () => Navigator.of(context).pop(true),
+            child: const Text('Continue'),
+          ),
+        ],
+      ),
+    );
 
-  Future<void> _saveConfig(PluginInfo plugin) async {
-    if (_config == null) return;
-    setState(() => _savingConfig = true);
-    try {
-      await _api.updatePluginConfiguration(plugin.id, _config!);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(content: Text('Configuration saved')));
-      }
-    } catch (e) {
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to save configuration: $e')));
-      }
-    } finally {
-      if (mounted) setState(() => _savingConfig = false);
-    }
+    return accepted == true;
   }
 
   Future<void> _togglePlugin(PluginInfo plugin) async {
@@ -92,9 +81,15 @@ class _AdminPluginDetailScreenState
       }
       ref.invalidate(adminInstalledPluginsProvider);
     } catch (e) {
+      final message = switch (e) {
+        DioException(response: final response) when response?.statusCode == 404 =>
+          'Failed to toggle plugin. The server could not find this plugin version. Try refreshing plugins, then retry.',
+        DioException() => 'Failed to toggle plugin. Please check server logs for details.',
+        _ => 'Failed to toggle plugin: $e',
+      };
+
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Failed to toggle plugin: $e')));
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text(message)));
       }
     } finally {
       if (mounted) setState(() => _toggling = false);
@@ -180,6 +175,104 @@ class _AdminPluginDetailScreenState
     return '${client.baseUrl}/Plugins/${plugin.id}/${plugin.version}/Image';
   }
 
+  Uri _pluginHtmlSettingsUri(String configPageName) {
+    final client = GetIt.instance<MediaServerClient>();
+    return Uri.parse(client.baseUrl).resolve(
+      '/web/ConfigurationPage?name=${Uri.encodeQueryComponent(configPageName)}',
+    );
+  }
+
+  Future<String?> _resolveConfigurationPageName(PluginInfo plugin) async {
+    final client = GetIt.instance<MediaServerClient>();
+    final token = client.accessToken;
+    if (token == null || token.isEmpty) {
+      return null;
+    }
+
+    final uri = Uri.parse(client.baseUrl).resolve('/web/ConfigurationPages');
+    final httpClient = HttpClient();
+    try {
+      final request = await httpClient.getUrl(uri);
+      request.headers.set('X-Emby-Token', token);
+      request.headers.set('Accept', 'application/json');
+      final response = await request.close();
+      if (response.statusCode < 200 || response.statusCode >= 300) {
+        return null;
+      }
+
+      final jsonText = await utf8.decoder.bind(response).join();
+      final decoded = jsonDecode(jsonText);
+      if (decoded is! List) {
+        return null;
+      }
+
+      Map<String, dynamic>? firstMatch;
+      for (final entry in decoded) {
+        if (entry is! Map) {
+          continue;
+        }
+
+        final mapped = Map<String, dynamic>.from(entry);
+        final pagePluginId = (mapped['PluginId'] ?? '').toString();
+        if (pagePluginId.toLowerCase() != plugin.id.toLowerCase()) {
+          continue;
+        }
+
+        firstMatch ??= mapped;
+        final inMainMenu = mapped['EnableInMainMenu'] == true;
+        if (inMainMenu) {
+          firstMatch = mapped;
+          break;
+        }
+      }
+
+      final name = (firstMatch?['Name'] ?? '').toString().trim();
+      return name.isEmpty ? null : name;
+    } catch (_) {
+      return null;
+    } finally {
+      httpClient.close(force: true);
+    }
+  }
+
+  Future<void> _openHtmlSettings(PluginInfo plugin) async {
+    final proceed = await _confirmExperimentalHtmlSettings();
+    if (!proceed || !mounted) {
+      return;
+    }
+
+    final client = GetIt.instance<MediaServerClient>();
+    final token = client.accessToken;
+    if (token == null || token.isEmpty) {
+      if (!mounted) {
+        return;
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Unable to open settings: missing auth token.')),
+      );
+      return;
+    }
+
+    final configPageName = await _resolveConfigurationPageName(plugin) ?? plugin.name;
+    if (!mounted) {
+      return;
+    }
+
+    final uri = _pluginHtmlSettingsUri(configPageName);
+    await Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder: (context) => PluginWebSettingsScreen(
+          configurationPageUri: uri,
+          serverBaseUrl: client.baseUrl,
+          accessToken: token,
+          userId: client.userId,
+          title: '${plugin.name} Settings',
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pluginsAsync = ref.watch(adminInstalledPluginsProvider);
@@ -219,13 +312,6 @@ class _AdminPluginDetailScreenState
       ? null
       : latestVersionInfoAfter(plugin.version, packageInfo.versions);
 
-    if (plugin.configurationFileName != null &&
-        _config == null &&
-        !_loadingConfig &&
-        _configError == null) {
-      Future.microtask(() => _loadConfig(plugin));
-    }
-
     final statusBanner = _buildStatusBanner(context, plugin);
 
     if (isWide) {
@@ -251,18 +337,6 @@ class _AdminPluginDetailScreenState
                             color: theme.colorScheme.onSurfaceVariant),
                       ),
                     ],
-                    const SizedBox(height: 20),
-                    if (plugin.configurationFileName != null)
-                      _ConfigSection(
-                        config: _config,
-                        loading: _loadingConfig,
-                        saving: _savingConfig,
-                        error: _configError,
-                        onLoad: () => _loadConfig(plugin),
-                        onSave: () => _saveConfig(plugin),
-                        onConfigChanged: (config) =>
-                            setState(() => _config = config),
-                      ),
                     if (packageInfo != null &&
                         packageInfo.versions.isNotEmpty) ...[
                       const SizedBox(height: 16),
@@ -300,6 +374,7 @@ class _AdminPluginDetailScreenState
                                   latestUpdateVersion,
                                 ),
                         onUninstall: () => _uninstallPlugin(plugin),
+                        onOpenHtmlSettings: () => _openHtmlSettings(plugin),
                       ),
                       const SizedBox(height: 16),
                     ],
@@ -370,25 +445,12 @@ class _AdminPluginDetailScreenState
                       latestUpdateVersion,
                     ),
             onUninstall: () => _uninstallPlugin(plugin),
+            onOpenHtmlSettings: () => _openHtmlSettings(plugin),
           ),
         ],
 
         const SizedBox(height: 16),
         _DetailsTable(plugin: plugin, packageInfo: packageInfo),
-
-        if (plugin.configurationFileName != null) ...[
-          const SizedBox(height: 16),
-          _ConfigSection(
-            config: _config,
-            loading: _loadingConfig,
-            saving: _savingConfig,
-            error: _configError,
-            onLoad: () => _loadConfig(plugin),
-            onSave: () => _saveConfig(plugin),
-            onConfigChanged: (config) =>
-                setState(() => _config = config),
-          ),
-        ],
 
         if (packageInfo != null && packageInfo.versions.isNotEmpty) ...[
           const SizedBox(height: 16),
@@ -491,6 +553,7 @@ class _ActionsSection extends StatelessWidget {
   final VoidCallback onToggle;
   final VoidCallback? onInstallUpdate;
   final VoidCallback onUninstall;
+  final VoidCallback onOpenHtmlSettings;
 
   const _ActionsSection({
     required this.plugin,
@@ -499,6 +562,7 @@ class _ActionsSection extends StatelessWidget {
     required this.onToggle,
     this.onInstallUpdate,
     required this.onUninstall,
+    required this.onOpenHtmlSettings,
   });
 
   @override
@@ -536,6 +600,14 @@ class _ActionsSection extends StatelessWidget {
                 onTap: onInstallUpdate,
               ),
             if (onInstallUpdate != null) const Divider(),
+            ListTile(
+              contentPadding: EdgeInsets.zero,
+              leading: Icon(Icons.web, color: theme.colorScheme.primary),
+              title: const Text('Settings'),
+              subtitle: const Text('Plugin settings page'),
+              onTap: onOpenHtmlSettings,
+            ),
+            const Divider(),
             ListTile(
                 contentPadding: EdgeInsets.zero,
                 leading: Icon(Icons.delete_outline, color: theme.colorScheme.error),
@@ -680,421 +752,5 @@ class _RevisionHistory extends StatelessWidget {
         ),
       ),
     );
-  }
-}
-
-class _ConfigSection extends StatelessWidget {
-  final Map<String, dynamic>? config;
-  final bool loading;
-  final bool saving;
-  final String? error;
-  final VoidCallback onLoad;
-  final VoidCallback onSave;
-  final ValueChanged<Map<String, dynamic>> onConfigChanged;
-
-  const _ConfigSection({
-    required this.config,
-    required this.loading,
-    required this.saving,
-    required this.error,
-    required this.onLoad,
-    required this.onSave,
-    required this.onConfigChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    return Card(
-      child: Padding(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              children: [
-                Text('Settings', style: theme.textTheme.titleMedium),
-                const Spacer(),
-                if (config != null)
-                  FilledButton.tonalIcon(
-                    onPressed: saving ? null : onSave,
-                    icon: saving
-                        ? const SizedBox(
-                            width: 16,
-                            height: 16,
-                            child: CircularProgressIndicator(strokeWidth: 2),
-                          )
-                        : const Icon(Icons.save),
-                    label: const Text('Save'),
-                  ),
-              ],
-            ),
-            const SizedBox(height: 12),
-            if (loading)
-              const Center(child: CircularProgressIndicator())
-            else if (error != null)
-              Column(
-                children: [
-                  Text('Error loading settings: $error'),
-                  const SizedBox(height: 8),
-                  ElevatedButton(onPressed: onLoad, child: const Text('Retry')),
-                ],
-              )
-            else if (config != null)
-              _ConfigForm(
-                config: config!,
-                onChanged: onConfigChanged,
-              ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _ConfigForm extends StatelessWidget {
-  final Map<String, dynamic> config;
-  final ValueChanged<Map<String, dynamic>> onChanged;
-  final List<String> _path;
-
-  const _ConfigForm({
-    required this.config,
-    required this.onChanged,
-  }) : _path = const [];
-
-  const _ConfigForm._nested({
-    required this.config,
-    required this.onChanged,
-    required List<String> path,
-  }) : _path = path;
-
-  @override
-  Widget build(BuildContext context) {
-    final entries = config.entries.toList();
-    if (entries.isEmpty) {
-      return const Text('No configuration options available');
-    }
-
-    return Column(
-      crossAxisAlignment: CrossAxisAlignment.start,
-      children: entries.map((entry) {
-        return _buildField(context, entry.key, entry.value);
-      }).toList(),
-    );
-  }
-
-  void _update(String key, dynamic newValue) {
-    final updated = Map<String, dynamic>.from(config);
-    updated[key] = newValue;
-    onChanged(updated);
-  }
-
-  Widget _buildField(BuildContext context, String key, dynamic value) {
-    if (value is bool) {
-      return SwitchListTile(
-        contentPadding: EdgeInsets.zero,
-        title: Text(_formatKey(key)),
-        value: value,
-        onChanged: (v) => _update(key, v),
-      );
-    }
-
-    if (value is int) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: TextFormField(
-          key: ValueKey([..._path, key].join('.')),
-          initialValue: value.toString(),
-          decoration: InputDecoration(
-            labelText: _formatKey(key),
-            border: const OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.number,
-          onChanged: (v) => _update(key, int.tryParse(v) ?? value),
-        ),
-      );
-    }
-
-    if (value is double) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: TextFormField(
-          key: ValueKey([..._path, key].join('.')),
-          initialValue: value.toString(),
-          decoration: InputDecoration(
-            labelText: _formatKey(key),
-            border: const OutlineInputBorder(),
-          ),
-          keyboardType: TextInputType.number,
-          onChanged: (v) => _update(key, double.tryParse(v) ?? value),
-        ),
-      );
-    }
-
-    if (value is String) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: TextFormField(
-          key: ValueKey([..._path, key].join('.')),
-          initialValue: value,
-          decoration: InputDecoration(
-            labelText: _formatKey(key),
-            border: const OutlineInputBorder(),
-          ),
-          onChanged: (v) => _update(key, v),
-        ),
-      );
-    }
-
-    if (value is List) {
-      return _ListField(
-        label: _formatKey(key),
-        list: value,
-        onChanged: (newList) => _update(key, newList),
-      );
-    }
-
-    if (value is Map) {
-      final mapValue = Map<String, dynamic>.from(value);
-      return _NestedMapSection(
-        label: _formatKey(key),
-        map: mapValue,
-        path: [..._path, key],
-        onChanged: (newMap) => _update(key, newMap),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: _formatKey(key),
-          border: const OutlineInputBorder(),
-        ),
-        child: Text(value?.toString() ?? 'null'),
-      ),
-    );
-  }
-
-  static String _formatKey(String key) {
-    return key.replaceAllMapped(
-      RegExp(r'([a-z])([A-Z])'),
-      (m) => '${m[1]} ${m[2]}',
-    );
-  }
-}
-
-class _NestedMapSection extends StatelessWidget {
-  final String label;
-  final Map<String, dynamic> map;
-  final List<String> path;
-  final ValueChanged<Map<String, dynamic>> onChanged;
-
-  const _NestedMapSection({
-    required this.label,
-    required this.map,
-    required this.path,
-    required this.onChanged,
-  });
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 4),
-      child: ExpansionTile(
-        tilePadding: EdgeInsets.zero,
-        title: Text(label, style: theme.textTheme.titleSmall),
-        subtitle: Text('${map.length} properties',
-            style: theme.textTheme.bodySmall),
-        children: [
-          Padding(
-            padding: const EdgeInsets.only(left: 16),
-            child: _ConfigForm._nested(
-              config: map,
-              onChanged: onChanged,
-              path: path,
-            ),
-          ),
-        ],
-      ),
-    );
-  }
-}
-
-class _ListField extends StatefulWidget {
-  final String label;
-  final List<dynamic> list;
-  final ValueChanged<List<dynamic>> onChanged;
-
-  const _ListField({
-    required this.label,
-    required this.list,
-    required this.onChanged,
-  });
-
-  @override
-  State<_ListField> createState() => _ListFieldState();
-}
-
-class _ListFieldState extends State<_ListField> {
-  late List<dynamic> _items;
-
-  @override
-  void initState() {
-    super.initState();
-    _items = List<dynamic>.from(widget.list);
-  }
-
-  @override
-  void didUpdateWidget(_ListField old) {
-    super.didUpdateWidget(old);
-    if (old.list != widget.list) {
-      _items = List<dynamic>.from(widget.list);
-    }
-  }
-
-  bool get _isPrimitiveList =>
-      _items.isEmpty || _items.every((e) => e is String || e is num || e is bool);
-
-  @override
-  Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-
-    if (!_isPrimitiveList) {
-      return Padding(
-        padding: const EdgeInsets.symmetric(vertical: 4),
-        child: ExpansionTile(
-          tilePadding: EdgeInsets.zero,
-          title: Text(widget.label, style: theme.textTheme.titleSmall),
-          subtitle: Text('${_items.length} items',
-              style: theme.textTheme.bodySmall),
-          children: [
-            for (var i = 0; i < _items.length; i++)
-              if (_items[i] is Map)
-                Padding(
-                  padding: const EdgeInsets.only(left: 16),
-                  child: _NestedMapSection(
-                    label: '${widget.label} [$i]',
-                    map: Map<String, dynamic>.from(_items[i] as Map),
-                    path: [widget.label, '$i'],
-                    onChanged: (newMap) {
-                      _items[i] = newMap;
-                      widget.onChanged(List<dynamic>.from(_items));
-                    },
-                  ),
-                )
-              else
-                ListTile(
-                  dense: true,
-                  contentPadding: const EdgeInsets.only(left: 16),
-                  title: Text(_items[i].toString()),
-                ),
-          ],
-        ),
-      );
-    }
-
-    return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 8),
-      child: InputDecorator(
-        decoration: InputDecoration(
-          labelText: widget.label,
-          border: const OutlineInputBorder(),
-        ),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            if (_items.isNotEmpty)
-              Wrap(
-                spacing: 6,
-                runSpacing: 4,
-                children: [
-                  for (var i = 0; i < _items.length; i++)
-                    Chip(
-                      label: Text(_items[i].toString()),
-                      onDeleted: () {
-                        setState(() => _items.removeAt(i));
-                        widget.onChanged(List<dynamic>.from(_items));
-                      },
-                    ),
-                ],
-              ),
-            const SizedBox(height: 4),
-            _AddItemButton(
-              onAdd: (value) {
-                setState(() => _items.add(value));
-                widget.onChanged(List<dynamic>.from(_items));
-              },
-            ),
-          ],
-        ),
-      ),
-    );
-  }
-}
-
-class _AddItemButton extends StatefulWidget {
-  final ValueChanged<String> onAdd;
-  const _AddItemButton({required this.onAdd});
-
-  @override
-  State<_AddItemButton> createState() => _AddItemButtonState();
-}
-
-class _AddItemButtonState extends State<_AddItemButton> {
-  bool _editing = false;
-  final _controller = TextEditingController();
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    if (!_editing) {
-      return TextButton.icon(
-        onPressed: () => setState(() => _editing = true),
-        icon: const Icon(Icons.add, size: 18),
-        label: const Text('Add item'),
-      );
-    }
-    return Row(
-      children: [
-        Expanded(
-          child: TextField(
-            controller: _controller,
-            autofocus: true,
-            decoration: const InputDecoration(
-              hintText: 'Enter value',
-              isDense: true,
-              border: InputBorder.none,
-            ),
-            onSubmitted: _submit,
-          ),
-        ),
-        IconButton(
-          icon: const Icon(Icons.check, size: 18),
-          onPressed: () => _submit(_controller.text),
-        ),
-        IconButton(
-          icon: const Icon(Icons.close, size: 18),
-          onPressed: () => setState(() {
-            _editing = false;
-            _controller.clear();
-          }),
-        ),
-      ],
-    );
-  }
-
-  void _submit(String value) {
-    if (value.trim().isEmpty) return;
-    widget.onAdd(value.trim());
-    _controller.clear();
-    setState(() => _editing = false);
   }
 }

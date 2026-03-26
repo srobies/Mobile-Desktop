@@ -6,6 +6,69 @@ class JellyfinAdminPluginsApi implements AdminPluginsApi {
 
   JellyfinAdminPluginsApi(this._dio);
 
+  List<String> _versionCandidates(String version) {
+    final trimmed = version.trim();
+    final out = <String>{trimmed.isEmpty ? version : trimmed};
+
+    final numericCoreMatch = RegExp(r'^\d+(?:\.\d+){1,3}').firstMatch(trimmed);
+    final numericCore = numericCoreMatch?.group(0);
+    if (numericCore != null && numericCore.isNotEmpty) {
+      out.add(numericCore);
+    }
+
+    return out.toList(growable: false);
+  }
+
+  Future<void> _postWithVersionFallback(
+    String pluginId,
+    String version,
+    String action,
+  ) async {
+    DioException? lastNotFound;
+
+    final encodedPluginId = Uri.encodeComponent(pluginId);
+    for (final candidate in _versionCandidates(version)) {
+      final encodedVersion = Uri.encodeComponent(candidate);
+      try {
+        await _dio.post('/Plugins/$encodedPluginId/$encodedVersion/$action');
+        return;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          lastNotFound = e;
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    if (lastNotFound != null) {
+      throw lastNotFound;
+    }
+  }
+
+  Future<void> _deleteWithVersionFallback(String pluginId, String version) async {
+    DioException? lastNotFound;
+
+    final encodedPluginId = Uri.encodeComponent(pluginId);
+    for (final candidate in _versionCandidates(version)) {
+      final encodedVersion = Uri.encodeComponent(candidate);
+      try {
+        await _dio.delete('/Plugins/$encodedPluginId/$encodedVersion');
+        return;
+      } on DioException catch (e) {
+        if (e.response?.statusCode == 404) {
+          lastNotFound = e;
+          continue;
+        }
+        rethrow;
+      }
+    }
+
+    if (lastNotFound != null) {
+      throw lastNotFound;
+    }
+  }
+
   @override
   Future<List<PluginInfo>> getInstalledPlugins() async {
     final response = await _dio.get('/Plugins');
@@ -16,17 +79,17 @@ class JellyfinAdminPluginsApi implements AdminPluginsApi {
 
   @override
   Future<void> enablePlugin(String pluginId, String version) async {
-    await _dio.post('/Plugins/$pluginId/$version/Enable');
+    await _postWithVersionFallback(pluginId, version, 'Enable');
   }
 
   @override
   Future<void> disablePlugin(String pluginId, String version) async {
-    await _dio.post('/Plugins/$pluginId/$version/Disable');
+    await _postWithVersionFallback(pluginId, version, 'Disable');
   }
 
   @override
   Future<void> uninstallPlugin(String pluginId, String version) async {
-    await _dio.delete('/Plugins/$pluginId/$version');
+    await _deleteWithVersionFallback(pluginId, version);
   }
 
   @override
