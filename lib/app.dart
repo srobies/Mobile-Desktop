@@ -1,13 +1,19 @@
+import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
+import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
+import 'package:url_launcher/url_launcher.dart';
 
+import 'data/services/app_update_service.dart';
 import 'di/providers.dart';
 import 'ui/navigation/app_router.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/widgets/cast_mini_player.dart';
 import 'ui/widgets/mini_audio_player.dart';
 import 'ui/widgets/offline_banner.dart';
+import 'util/platform_detection.dart';
 
 class MoonfinApp extends StatelessWidget {
   const MoonfinApp({super.key});
@@ -72,6 +78,56 @@ class _ConnectivityListener extends ConsumerStatefulWidget {
 class _ConnectivityListenerState
     extends ConsumerState<_ConnectivityListener> {
   bool? _wasOnline;
+  bool _didScheduleUpdateCheck = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _scheduleDesktopUpdateCheck();
+  }
+
+  void _scheduleDesktopUpdateCheck() {
+    if (!PlatformDetection.isDesktop || _didScheduleUpdateCheck) {
+      return;
+    }
+
+    _didScheduleUpdateCheck = true;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) {
+        return;
+      }
+      unawaited(_runDesktopUpdateCheck());
+    });
+  }
+
+  Future<void> _runDesktopUpdateCheck() async {
+    try {
+      final update = await GetIt.instance<AppUpdateService>().checkForUpdateIfDue();
+      if (!mounted || update == null) {
+        return;
+      }
+
+      final messenger = ScaffoldMessenger.of(context);
+      messenger.clearSnackBars();
+      messenger.showSnackBar(
+        SnackBar(
+          content: Text('Update available: v${update.version}'),
+          duration: const Duration(seconds: 10),
+          action: SnackBarAction(
+            label: 'Download',
+            onPressed: () {
+              unawaited(
+                launchUrl(
+                  update.downloadUri,
+                  mode: LaunchMode.externalApplication,
+                ),
+              );
+            },
+          ),
+        ),
+      );
+    } catch (_) {}
+  }
 
   @override
   Widget build(BuildContext context) {

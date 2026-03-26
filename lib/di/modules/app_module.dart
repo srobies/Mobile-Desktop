@@ -18,6 +18,7 @@ import '../../data/repositories/user_views_repository.dart';
 import '../../data/repositories/search_repository.dart';
 import '../../data/repositories/item_mutation_repository.dart';
 import '../../data/services/background_service.dart';
+import '../../data/services/app_update_service.dart';
 import '../../data/services/cast/airplay_provider.dart';
 import '../../data/services/cast/airplay_command_bridge.dart';
 import '../../data/services/cast/cast_service.dart';
@@ -72,6 +73,12 @@ void registerAppModule() {
   _getIt.registerLazySingleton(
     () => BackgroundService(),
     dispose: (service) => service.dispose(),
+  );
+  _getIt.registerLazySingleton(
+    () => AppUpdateService(
+      _getIt<PreferenceStore>(),
+      _getIt<UserPreferences>(),
+    ),
   );
   _getIt.registerLazySingleton(() => const NativeCastChannel());
   _getIt.registerLazySingleton(() => const NativeDlnaChannel());
