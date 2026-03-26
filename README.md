@@ -139,15 +139,19 @@ Books and audiobooks download in their **original format** - no transcoding.
 Download platform artifacts from the [Releases page](https://github.com/Moonfin-Client/Mobile-Desktop/releases).
 
 ### Android
-- Primary output: APK (`Moonfin-android.apk` / `app-release.apk`)
+- Primary output: APK (`Moonfin_Android_v<version>.apk`)
+- Optional output: App Bundle (`Moonfin_Android_v<version>.aab`)
 - Recommended for Android phones and tablets
 
 ### iOS
-- Build script produces unsigned IPA by default for user-side signing workflows
+- Signed IPA output: `Moonfin_iOS_v<version>.ipa`
+- Unsigned IPA output (default workflow): `Moonfin_iOS_v<version>_unsigned.ipa`
 
 ### Desktop
-- Windows installer and portable build outputs
+- Windows installer output: `Moonfin_Windows_v<version>.exe`
+- macOS DMG output: `Moonfin_macOS_v<version>.dmg`
 - Linux packaging via tarball/AppImage/deb/rpm/snap/flatpak (depending on tools)
+- Linux package outputs: `Moonfin_Linux_v<version>.<ext>`
 - macOS app bundle build support
 
 ## Building from Source

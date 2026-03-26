@@ -4,9 +4,7 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="Moonfin"
 APK_SOURCE="$REPO_ROOT/build/app/outputs/flutter-apk/app-release.apk"
-APK_OUTPUT="$REPO_ROOT/${APP_NAME}-android.apk"
 BUNDLE_SOURCE="$REPO_ROOT/build/app/outputs/bundle/release/app-release.aab"
-BUNDLE_OUTPUT="$REPO_ROOT/${APP_NAME}-android.aab"
 
 resolve_flutter() {
   if [ -n "${FLUTTER_BIN:-}" ] && [ -x "$FLUTTER_BIN" ]; then
@@ -46,6 +44,9 @@ if [ -z "$APP_VERSION" ] || [ -z "$APP_BUILD_NUMBER" ]; then
   echo "Error: could not read semantic version and build number from pubspec.yaml (expected x.y.z+build)" >&2
   exit 1
 fi
+
+APK_OUTPUT="$REPO_ROOT/${APP_NAME}_Android_v${APP_VERSION}.apk"
+BUNDLE_OUTPUT="$REPO_ROOT/${APP_NAME}_Android_v${APP_VERSION}.aab"
 
 echo "${APP_NAME} version: ${APP_VERSION} (${APP_BUILD_NUMBER})"
 

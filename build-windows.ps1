@@ -213,6 +213,7 @@ function Invoke-CheckedCommand {
 function New-InnoScript {
   param(
     [string]$AppVersion,
+    [string]$InstallerBaseName,
     [string]$OutputDir,
     [string]$IconPath,
     [string]$ReleaseDir,
@@ -234,7 +235,7 @@ DefaultDirName={autopf}\Moonfin
 DefaultGroupName={#MyAppName}
 DisableProgramGroupPage=yes
 OutputDir=$OutputDir
-OutputBaseFilename=Moonfin-Setup-x64
+OutputBaseFilename=$InstallerBaseName
 SetupIconFile=$IconPath
 Compression=lzma2
 SolidCompression=yes
@@ -268,6 +269,7 @@ Filename: "{app}\{#MyAppExeName}"; Description: "Launch {#MyAppName}"; Flags: no
 $flutterExe = Get-FlutterCommand
 $isccExe = Get-IsccPath
 $appVersion = Get-AppVersion
+$installerBaseName = "Moonfin_Windows_v$appVersion"
 
 Push-Location $repoRoot
 try {
@@ -297,8 +299,8 @@ try {
   $outputDir = Join-Path $repoRoot "build\windows\installer"
   $iconPath = Join-Path $repoRoot "windows\runner\resources\app_icon.ico"
   $issPath = Join-Path $outputDir "moonfin.generated.iss"
-  $outputExe = Join-Path $outputDir "Moonfin-Setup-x64.exe"
-  $rootExe = Join-Path $repoRoot "Moonfin-Setup-x64.exe"
+  $outputExe = Join-Path $outputDir "$installerBaseName.exe"
+  $rootExe = Join-Path $repoRoot "$installerBaseName.exe"
 
   New-Item -ItemType Directory -Force -Path $outputDir | Out-Null
 
@@ -306,7 +308,7 @@ try {
     throw "Missing app icon: $iconPath"
   }
 
-  New-InnoScript -AppVersion $appVersion -OutputDir $outputDir -IconPath $iconPath -ReleaseDir $releaseDir -IssPath $issPath
+  New-InnoScript -AppVersion $appVersion -InstallerBaseName $installerBaseName -OutputDir $outputDir -IconPath $iconPath -ReleaseDir $releaseDir -IssPath $issPath
 
   Write-Host "Building installer EXE..."
   Invoke-CheckedCommand -Name "ISCC" -FilePath $isccExe -Arguments @($issPath)

@@ -18,7 +18,7 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="Moonfin"
 APP_PATH="$REPO_ROOT/build/macos/Build/Products/Release/${APP_NAME}.app"
 STAGING_DIR="$REPO_ROOT/build/macos/dmg-staging"
-DMG_OUTPUT="$REPO_ROOT/${APP_NAME}.dmg"
+DMG_OUTPUT=""
 
 # Optional local overrides for private values.
 PRIVATE_ENV_FILE="$REPO_ROOT/build-macos.private.env"
@@ -39,6 +39,8 @@ if [ -z "$APP_VERSION" ]; then
   echo "Error: could not read version from pubspec.yaml" >&2
   exit 1
 fi
+
+DMG_OUTPUT="$REPO_ROOT/${APP_NAME}_macOS_v${APP_VERSION}.dmg"
 
 echo "${APP_NAME} version: ${APP_VERSION}"
 

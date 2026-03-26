@@ -8,8 +8,8 @@ REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="Moonfin"
 ARCHIVE_DIR="$REPO_ROOT/build/ios/archive"
 IPA_DIR="$REPO_ROOT/build/ios/ipa"
-ROOT_IPA_OUTPUT="$REPO_ROOT/${APP_NAME}-ios.ipa"
-ROOT_UNSIGNED_IPA_OUTPUT="$REPO_ROOT/${APP_NAME}-ios-unsigned.ipa"
+ROOT_IPA_OUTPUT=""
+ROOT_UNSIGNED_IPA_OUTPUT=""
 
 # Optional local overrides for private values.
 PRIVATE_ENV_FILE="$REPO_ROOT/build-ios.private.env"
@@ -68,6 +68,9 @@ if [ -z "$APP_VERSION" ]; then
   echo "Error: could not read version from pubspec.yaml" >&2
   exit 1
 fi
+
+ROOT_IPA_OUTPUT="$REPO_ROOT/${APP_NAME}_iOS_v${APP_VERSION}.ipa"
+ROOT_UNSIGNED_IPA_OUTPUT="$REPO_ROOT/${APP_NAME}_iOS_v${APP_VERSION}_unsigned.ipa"
 
 echo "${APP_NAME} version: ${APP_VERSION}"
 

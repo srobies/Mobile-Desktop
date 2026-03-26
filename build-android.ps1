@@ -39,7 +39,7 @@ function Get-AppVersion {
 $flutterExe = Get-FlutterCommand
 $appVersion = Get-AppVersion
 $apkSource = Join-Path $repoRoot "build\app\outputs\flutter-apk\app-release.apk"
-$apkOutput = Join-Path $repoRoot "Moonfin-android.apk"
+$apkOutput = Join-Path $repoRoot "Moonfin_Android_v$appVersion.apk"
 
 Push-Location $repoRoot
 try {

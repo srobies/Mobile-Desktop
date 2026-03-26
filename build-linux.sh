@@ -79,7 +79,8 @@ build_appimage() {
   fi
 
   local appimage_dir="$TEMP_DIR/appimage"
-  local appimage_name="${APP_NAME}-linux-x86_64.AppImage"
+  local version="$(get_app_version)"
+  local appimage_name="${APP_NAME}_Linux_v${version}.AppImage"
 
   rm -rf "$appimage_dir"
   mkdir -p "$appimage_dir"
@@ -110,8 +111,8 @@ EOF
 build_tarball() {
   echo "=== Building Tarball ==="
 
-  local tarball_name="${APP_NAME}-linux-x86_64.tar.gz"
   local version="$(get_app_version)"
+  local tarball_name="${APP_NAME}_Linux_v${version}.tar.gz"
   local tar_dir="$TEMP_DIR/tarball/moonfin-${version}"
 
   rm -rf "$TEMP_DIR/tarball"
@@ -150,6 +151,7 @@ build_deb() {
   fi
 
   local version="$(get_app_version)"
+  local deb_name="${APP_NAME}_Linux_v${version}.deb"
   local pkg_root="$TEMP_DIR/deb/moonfin-${version}"
 
   rm -rf "$TEMP_DIR/deb"
@@ -197,11 +199,11 @@ License: GPL-3.0
 EOF
 
   cd "$TEMP_DIR/deb"
-  dpkg-deb --build "moonfin-${version}" "moonfin_${version}_amd64.deb" 2>/dev/null || true
+  dpkg-deb --build "moonfin-${version}" "$deb_name" 2>/dev/null || true
 
-  if [ -f "moonfin_${version}_amd64.deb" ]; then
-    mv "moonfin_${version}_amd64.deb" "$REPO_ROOT/"
-    echo "✓ Created: $REPO_ROOT/moonfin_${version}_amd64.deb"
+  if [ -f "$deb_name" ]; then
+    mv "$deb_name" "$REPO_ROOT/"
+    echo "✓ Created: $REPO_ROOT/$deb_name"
   fi
 }
 
@@ -213,6 +215,7 @@ build_rpm() {
   fi
 
   local version="$(get_app_version)"
+  local rpm_name="${APP_NAME}_Linux_v${version}.rpm"
   local rpm_dir="$TEMP_DIR/rpm"
   local spec_file="$rpm_dir/moonfin.spec"
 
@@ -269,8 +272,8 @@ EOF
 
   local rpm_file=$(find "$rpm_dir/RPMS" -name "*.rpm" 2>/dev/null | head -1)
   if [ -n "$rpm_file" ]; then
-    cp "$rpm_file" "$REPO_ROOT/"
-    echo "✓ Created: $REPO_ROOT/$(basename "$rpm_file")"
+    cp "$rpm_file" "$REPO_ROOT/$rpm_name"
+    echo "✓ Created: $REPO_ROOT/$rpm_name"
   fi
 }
 
@@ -437,7 +440,7 @@ USAGE
   echo "======================================"
   echo "Build complete!"
   echo "Artifacts: $REPO_ROOT"
-  ls -lh "$REPO_ROOT"/Moonfin-* "$REPO_ROOT"/moonfin-* 2>/dev/null || echo "(no artifacts built)"
+  ls -lh "$REPO_ROOT"/Moonfin_* 2>/dev/null || echo "(no artifacts built)"
   echo "======================================"
 }
 
@@ -454,7 +457,8 @@ build_appimage() {
 
   local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
   local appimage_dir="$OUTPUT_DIR/appimage-build"
-  local appimage_name="${APP_NAME}-linux-x86_64.AppImage"
+  local version="$(get_app_version)"
+  local appimage_name="${APP_NAME}_Linux_v${version}.AppImage"
 
   mkdir -p "$appimage_dir"
 
@@ -505,8 +509,8 @@ build_tarball() {
   echo "=== Building Tarball ==="
 
   local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local tarball_name="${APP_NAME}-linux-x86_64.tar.gz"
   local version="$(get_app_version)"
+  local tarball_name="${APP_NAME}_Linux_v${version}.tar.gz"
 
   mkdir -p "$OUTPUT_DIR/tarball"
 
@@ -556,6 +560,7 @@ build_deb() {
 
   local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
   local version="$(get_app_version)"
+  local deb_name="${APP_NAME}_Linux_v${version}.deb"
   local deb_dir="$OUTPUT_DIR/deb-build"
   local pkg_root="$deb_dir/moonfin-${version}"
 
@@ -640,11 +645,11 @@ EOF
 
   # Build .deb
   cd "$deb_dir"
-  dpkg-deb --build "moonfin-${version}" "moonfin_${version}_amd64.deb" || true
+  dpkg-deb --build "moonfin-${version}" "$deb_name" || true
 
-  if [ -f "moonfin_${version}_amd64.deb" ]; then
-    mv "moonfin_${version}_amd64.deb" "$REPO_ROOT/"
-    echo "✓ Created: $REPO_ROOT/moonfin_${version}_amd64.deb"
+  if [ -f "$deb_name" ]; then
+    mv "$deb_name" "$REPO_ROOT/"
+    echo "✓ Created: $REPO_ROOT/$deb_name"
   fi
 
   cd "$REPO_ROOT"
@@ -660,6 +665,7 @@ build_rpm() {
 
   local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
   local version="$(get_app_version)"
+  local rpm_name="${APP_NAME}_Linux_v${version}.rpm"
   local rpm_dir="$OUTPUT_DIR/rpm-build"
   local spec_file="$rpm_dir/moonfin.spec"
 
@@ -718,8 +724,8 @@ EOF
   # Find and move RPM
   local rpm_file=$(find "$rpm_dir/RPMS" -name "*.rpm" 2>/dev/null | head -1)
   if [ -n "$rpm_file" ]; then
-    cp "$rpm_file" "$REPO_ROOT/"
-    echo "✓ Created: $REPO_ROOT/$(basename "$rpm_file")"
+    cp "$rpm_file" "$REPO_ROOT/$rpm_name"
+    echo "✓ Created: $REPO_ROOT/$rpm_name"
   fi
 
   cd "$REPO_ROOT"
@@ -898,7 +904,7 @@ USAGE
   echo "======================================"
   echo "Build complete!"
   echo "Artifacts: $REPO_ROOT"
-  ls -lh "$REPO_ROOT"/Moonfin-* "$REPO_ROOT"/moonfin-* 2>/dev/null || echo "(no artifacts built)"
+  ls -lh "$REPO_ROOT"/Moonfin_* 2>/dev/null || echo "(no artifacts built)"
   echo "======================================"
 }
 
