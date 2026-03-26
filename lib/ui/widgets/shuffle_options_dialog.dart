@@ -302,6 +302,7 @@ class _BackButton extends StatefulWidget {
 }
 
 class _BackButtonState extends State<_BackButton> {
+  final _prefs = GetIt.instance<UserPreferences>();
   final _focusNode = FocusNode();
   bool _isFocused = false;
 
@@ -319,6 +320,8 @@ class _BackButtonState extends State<_BackButton> {
 
   @override
   Widget build(BuildContext context) {
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
+
     return Padding(
       padding: const EdgeInsets.only(right: 12),
       child: Focus(
@@ -338,7 +341,7 @@ class _BackButtonState extends State<_BackButton> {
             width: 32,
             height: 32,
             decoration: BoxDecoration(
-              color: _isFocused ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+              color: _isFocused ? focusColor.withValues(alpha: 0.2) : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
             alignment: Alignment.center,
@@ -346,7 +349,7 @@ class _BackButtonState extends State<_BackButton> {
               '\u276E',
               style: TextStyle(
                 fontSize: 16,
-                color: _isFocused ? Colors.white : Colors.white.withValues(alpha: 0.6),
+                color: _isFocused ? focusColor : Colors.white.withValues(alpha: 0.6),
               ),
             ),
           ),

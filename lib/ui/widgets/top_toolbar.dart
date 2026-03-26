@@ -717,10 +717,12 @@ class _LibraryDropdownItem extends StatefulWidget {
 }
 
 class _LibraryDropdownItemState extends State<_LibraryDropdownItem> {
+  final _prefs = GetIt.instance<UserPreferences>();
   bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
     return MouseRegion(
       onEnter: (_) => setState(() => _isHovered = true),
       onExit: (_) => setState(() => _isHovered = false),
@@ -729,12 +731,12 @@ class _LibraryDropdownItemState extends State<_LibraryDropdownItem> {
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 10),
           color: _isHovered
-              ? Colors.white.withValues(alpha: 0.12)
+              ? focusColor.withValues(alpha: 0.12)
               : Colors.transparent,
           child: Text(
             widget.name,
-            style: const TextStyle(
-              color: Colors.white,
+            style: TextStyle(
+              color: _isHovered ? focusColor : Colors.white,
               fontSize: 15,
               fontWeight: FontWeight.w500,
             ),

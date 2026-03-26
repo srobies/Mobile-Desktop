@@ -1,6 +1,5 @@
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
-import 'package:jellyfin_design/jellyfin_design.dart';
 import 'package:server_core/server_core.dart';
 
 import '../../../data/services/plugin_sync_service.dart';
@@ -163,31 +162,45 @@ class _AppearanceSettingsScreenState extends State<AppearanceSettingsScreen> {
       context: context,
       builder: (ctx) => SimpleDialog(
         title: const Text('Focus Border Color'),
-        children: AppColorScheme.focusBorderPresets.entries.map((e) {
+        children: AppTheme.values.map((theme) {
           return ListTile(
             leading: Container(
               width: 24,
               height: 24,
               decoration: BoxDecoration(
-                color: e.value,
+                color: Color(theme.colorValue),
                 shape: BoxShape.circle,
                 border: Border.all(color: Colors.white24),
               ),
             ),
-            title: Text(e.key),
-            onTap: () {
-              final match = AppTheme.values.where(
-                (t) => t.colorValue == e.value.toARGB32(),
-              );
-              if (match.isNotEmpty) {
-                _prefs.set(UserPreferences.focusColor, match.first);
-                setState(() {});
+            title: Text(_formatThemeName(theme.name)),
+            onTap: () async {
+              await _prefs.set(UserPreferences.focusColor, theme);
+              if (!mounted) return;
+              setState(() {});
+              if (ctx.mounted) {
+                Navigator.pop(ctx);
               }
-              Navigator.pop(ctx);
             },
           );
         }).toList(),
       ),
     );
+  }
+
+  String _formatThemeName(String camelCase) {
+    final buf = StringBuffer();
+    for (int i = 0; i < camelCase.length; i++) {
+      final c = camelCase[i];
+      if (i == 0) {
+        buf.write(c.toUpperCase());
+      } else if (c == c.toUpperCase() && c != c.toLowerCase()) {
+        buf.write(' ');
+        buf.write(c);
+      } else {
+        buf.write(c);
+      }
+    }
+    return buf.toString();
   }
 }

@@ -1,5 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get_it/get_it.dart';
+
+import '../../preference/user_preferences.dart';
 
 const _kAccent = Color(0xFF00A4DC);
 
@@ -119,6 +122,7 @@ class _TrackRow extends StatefulWidget {
 }
 
 class _TrackRowState extends State<_TrackRow> {
+  final _prefs = GetIt.instance<UserPreferences>();
   final _focusNode = FocusNode();
   bool _isFocused = false;
 
@@ -136,10 +140,11 @@ class _TrackRowState extends State<_TrackRow> {
 
   @override
   Widget build(BuildContext context) {
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
     final baseColor = widget.dimmed
         ? Colors.white.withValues(alpha: 0.5)
         : Colors.white.withValues(alpha: 0.8);
-    final color = _isFocused ? Colors.white : baseColor;
+    final color = _isFocused ? focusColor : baseColor;
 
     return Focus(
       focusNode: _focusNode,
@@ -157,7 +162,7 @@ class _TrackRowState extends State<_TrackRow> {
         onTap: widget.onTap,
         child: Container(
           width: double.infinity,
-          color: _isFocused ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+          color: _isFocused ? focusColor.withValues(alpha: 0.2) : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           child: Row(
             children: [

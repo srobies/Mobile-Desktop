@@ -6,6 +6,7 @@ import 'package:dio/dio.dart';
 import 'package:server_core/server_core.dart';
 
 import '../../auth/repositories/session_repository.dart';
+import '../../preference/user_preferences.dart';
 import '../../auth/repositories/user_repository.dart';
 import '../navigation/destinations.dart';
 
@@ -246,6 +247,7 @@ class _MenuRow extends StatefulWidget {
 }
 
 class _MenuRowState extends State<_MenuRow> {
+  final _prefs = GetIt.instance<UserPreferences>();
   final _focusNode = FocusNode();
   bool _isFocused = false;
 
@@ -263,7 +265,8 @@ class _MenuRowState extends State<_MenuRow> {
 
   @override
   Widget build(BuildContext context) {
-    final color = _isFocused ? Colors.white : widget.contentColor;
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
+    final color = _isFocused ? focusColor : widget.contentColor;
 
     return Focus(
       focusNode: _focusNode,
@@ -281,7 +284,7 @@ class _MenuRowState extends State<_MenuRow> {
         onTap: widget.onTap,
         child: Container(
           width: double.infinity,
-          color: _isFocused ? Colors.white.withValues(alpha: 0.12) : Colors.transparent,
+          color: _isFocused ? focusColor.withValues(alpha: 0.2) : Colors.transparent,
           padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
           child: Row(
             children: [

@@ -2,7 +2,9 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:get_it/get_it.dart';
 
+import '../../preference/user_preferences.dart';
 import '../../util/platform_detection.dart';
 
 const _kExpandDuration = Duration(milliseconds: 150);
@@ -36,6 +38,7 @@ class ExpandableIconButton extends StatefulWidget {
 }
 
 class _ExpandableIconButtonState extends State<ExpandableIconButton> {
+  final _prefs = GetIt.instance<UserPreferences>();
   late final FocusNode _focusNode;
   bool _isFocused = false;
   bool _isHovered = false;
@@ -79,15 +82,16 @@ class _ExpandableIconButtonState extends State<ExpandableIconButton> {
     final btnSize = isMobile ? 40.0 : 48.0;
     final iconSize = isMobile ? 22.0 : 28.0;
     final borderRadius = btnSize / 2;
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
 
     final bgColor = widget.isActive
-        ? Colors.white.withValues(alpha: 0.22)
+        ? focusColor.withValues(alpha: 0.22)
         : (_isFocused || _isHovered)
-            ? Colors.white.withValues(alpha: 0.12)
+            ? focusColor.withValues(alpha: 0.12)
             : Colors.transparent;
 
     final fgColor = (widget.isActive || _isFocused || _isHovered)
-        ? Colors.white
+        ? focusColor
         : Colors.white.withValues(alpha: 0.6);
 
     return MouseRegion(

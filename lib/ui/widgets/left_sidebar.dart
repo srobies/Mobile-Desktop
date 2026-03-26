@@ -594,6 +594,7 @@ class _SidebarItem extends StatefulWidget {
 }
 
 class _SidebarItemState extends State<_SidebarItem> {
+  final _prefs = GetIt.instance<UserPreferences>();
   final _focusNode = FocusNode();
   bool _isFocused = false;
   bool _isHovered = false;
@@ -613,10 +614,11 @@ class _SidebarItemState extends State<_SidebarItem> {
   @override
   Widget build(BuildContext context) {
     final highlighted = _isFocused || _isHovered;
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
     final fgColor = widget.isActive
         ? _kAccent
         : highlighted
-            ? Colors.white
+            ? focusColor
             : Colors.white.withValues(alpha: 0.6);
 
     return Padding(
@@ -644,7 +646,7 @@ class _SidebarItemState extends State<_SidebarItem> {
               padding: const EdgeInsets.symmetric(horizontal: 10),
               decoration: BoxDecoration(
                 color: highlighted
-                    ? Colors.white.withValues(alpha: 0.12)
+                    ? focusColor.withValues(alpha: 0.12)
                     : widget.isActive
                         ? _kAccent.withValues(alpha: 0.15)
                         : Colors.transparent,
@@ -697,10 +699,12 @@ class _SidebarLibraryItem extends StatefulWidget {
 }
 
 class _SidebarLibraryItemState extends State<_SidebarLibraryItem> {
+  final _prefs = GetIt.instance<UserPreferences>();
   bool _isHovered = false;
 
   @override
   Widget build(BuildContext context) {
+    final focusColor = Color(_prefs.get(UserPreferences.focusColor).colorValue);
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 1),
       child: MouseRegion(
@@ -714,7 +718,7 @@ class _SidebarLibraryItemState extends State<_SidebarLibraryItem> {
             padding: const EdgeInsets.only(left: 50, right: 10),
             decoration: BoxDecoration(
               color: _isHovered
-                  ? Colors.white.withValues(alpha: 0.1)
+                  ? focusColor.withValues(alpha: 0.1)
                   : Colors.transparent,
               borderRadius: BorderRadius.circular(8),
             ),
@@ -724,7 +728,7 @@ class _SidebarLibraryItemState extends State<_SidebarLibraryItem> {
                     widget.label,
                     style: TextStyle(
                       color: _isHovered
-                          ? Colors.white
+                          ? focusColor
                           : Colors.white.withValues(alpha: 0.5),
                       fontSize: 13,
                       fontWeight: FontWeight.w500,
