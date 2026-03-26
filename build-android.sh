@@ -39,13 +39,15 @@ resolve_flutter() {
 
 FLUTTER="$(resolve_flutter)"
 
-APP_VERSION=$(grep '^version:' "$REPO_ROOT/pubspec.yaml" | sed 's/version:[[:space:]]*//' | cut -d'+' -f1 | tr -d '[:space:]')
-if [ -z "$APP_VERSION" ]; then
-  echo "Error: could not read version from pubspec.yaml" >&2
+VERSION_LINE=$(grep '^version:' "$REPO_ROOT/pubspec.yaml" | sed 's/version:[[:space:]]*//' | tr -d '[:space:]')
+APP_VERSION=$(printf '%s' "$VERSION_LINE" | cut -d'+' -f1)
+APP_BUILD_NUMBER=$(printf '%s' "$VERSION_LINE" | cut -d'+' -f2)
+if [ -z "$APP_VERSION" ] || [ -z "$APP_BUILD_NUMBER" ]; then
+  echo "Error: could not read semantic version and build number from pubspec.yaml (expected x.y.z+build)" >&2
   exit 1
 fi
 
-echo "${APP_NAME} version: ${APP_VERSION}"
+echo "${APP_NAME} version: ${APP_VERSION} (${APP_BUILD_NUMBER})"
 
 cd "$REPO_ROOT"
 
@@ -56,7 +58,10 @@ echo "Resolving packages..."
 "$FLUTTER" pub get
 
 echo "Building Android release APK..."
-"$FLUTTER" build apk --release --target-platform android-arm64,android-arm
+"$FLUTTER" build apk --release \
+  --build-name "$APP_VERSION" \
+  --build-number "$APP_BUILD_NUMBER" \
+  --target-platform android-arm64,android-arm
 
 if [ ! -f "$APK_SOURCE" ]; then
   echo "Error: APK not found at $APK_SOURCE" >&2
@@ -69,7 +74,9 @@ echo "APK created: $APK_SOURCE"
 echo "APK copied to root: $APK_OUTPUT"
 
 echo "Building Android App Bundle..."
-if ! "$FLUTTER" build appbundle --release; then
+if ! "$FLUTTER" build appbundle --release \
+  --build-name "$APP_VERSION" \
+  --build-number "$APP_BUILD_NUMBER"; then
   echo "Flutter appbundle build failed. Retrying with Gradle bundleRelease fallback..."
   (
     cd "$REPO_ROOT/android"
