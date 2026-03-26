@@ -1,456 +1,254 @@
-# Moonfin
+<h1 align="center">Moonfin</h1>
+<h3 align="center">Enhanced Jellyfin & Emby client for mobile, tablet, and desktop</h3>
 
-Jellyfin & Emby media client for mobile, TV, and desktop.
+---
 
-## Required Toolchain Versions
+[![License](https://img.shields.io/github/license/Moonfin-Client/Mobile-Desktop.svg)](LICENSE)
+[![Release](https://img.shields.io/github/v/release/Moonfin-Client/Mobile-Desktop)](https://github.com/Moonfin-Client/Mobile-Desktop/releases)
+[![Downloads](https://img.shields.io/github/downloads/Moonfin-Client/Mobile-Desktop/total?label=Downloads)](https://github.com/Moonfin-Client/Mobile-Desktop/releases)
 
+> **[← Back to main Moonfin project](https://github.com/Moonfin-Client)**
+
+Moonfin is a cross-platform media client built with Flutter, designed for Jellyfin and Emby users who want a modern, customizable experience across mobile, tablet, and desktop platforms.
+
+## Supported Servers
+
+| Server | Minimum Version | Status |
+|--------|------------------|--------|
+| Jellyfin | 10.8.0+ | Full support |
+| Emby | 4.8.0.0+ | Full support |
+
+## Features & Enhancements
+
+### Mobile + Desktop Experience
+- Optimized for phones, tablets, and desktop environments from one Flutter codebase
+- Responsive navigation patterns tuned for touch on mobile and larger layouts on desktop
+- Platform-specific build/release scripts for Android, iOS, Linux, macOS, and Windows
+
+### Playback Engine - libmpv via media_kit
+All video and audio playback is powered by [media_kit](https://github.com/media-kit/media-kit) (libmpv) across every platform. This gives Moonfin broad codec coverage without relying on platform-specific media frameworks:
+
+| Category | Supported Formats |
+|----------|-------------------|
+| **Video** | H.264, HEVC (H.265), VP8, VP9, AV1, MPEG-2, MPEG-4, VC-1 |
+| **Audio** | AAC, MP3, FLAC, Opus, Vorbis, AC3 (Dolby Digital), EAC3 (Dolby Digital Plus), DTS, TrueHD, PCM (16-/24-bit), ALAC |
+| **Containers** | MP4, MKV, WebM, AVI, MOV, TS / M2TS, WMV / ASF |
+| **Subtitles** | SRT, ASS / SSA, VTT / WebVTT, TTML, SUB; bitmap (PGS, DVB, VobSub) on desktop |
+| **HDR** | Dolby Vision, HDR10+, HDR10, HLG - automatic detection and signaling |
+| **HW Accel** | VA-API, QSV, NVENC, VideoToolbox, V4L2, RKMPP |
+
+### Downloads - Original or Transcoded
+Media can be downloaded in its **original format** (bit-for-bit copy) or **server-transcoded** to a smaller file before saving. Transcoded downloads use **HEVC (H.265) video + AAC audio in an MP4 container**, which delivers roughly 50% smaller files compared to H.264 at equivalent perceived quality.
+
+| Preset | Resolution | Video Bitrate | Audio Bitrate | Est. Size/hr |
+|--------|-----------|---------------|---------------|--------------|
+| Original | Source | Source | Source | Varies |
+| High | 1080p | 4 Mbps | 192 kbps | ~1.8 GB |
+| Medium | 720p | 2 Mbps | 128 kbps | ~950 MB |
+| Low | 480p | 1 Mbps | 96 kbps | ~490 MB |
+| Mobile | 360p | 500 kbps | 64 kbps | ~250 MB |
+
+Downloaded files are organized automatically:
+```
+Movies/{Title (Year)}/
+TV/{Series}/Season NN/
+Music/{Artist}/{Album}/
+Audiobooks/{Author}/{Collection}/
+Books/{BookName}/
+```
+
+Resume position tracking, offline subtitle support, and full playback controls work identically for downloaded content.
+
+### Ebook & Audiobook Support
+**Ebooks** - Read EPUB, MOBI, AZW/AZW3, and PDF directly in-app. Comic archives (CBZ, CBR, CB7, CBT) render with two-page spread on desktop, zoom/pan, and page caching. Reader themes include Light, Dark, and Sepia.
+
+**Audiobooks** - Play M4B and multi-file audiobooks with chapter navigation, position bookmarks, and resume tracking. Download entire audiobooks for offline listening with the same quality presets as video.
+
+Books and audiobooks download in their **original format** - no transcoding.
+
+### Casting and Session Control
+- Native Google Cast, DLNA, and AirPlay integration paths
+- Playback controls with track selection, delay adjustments, and picture-in-picture support
+- Queue/next-up behavior that works across local and remote playback states
+
+### Integrated Admin Surface
+- Built-in admin dashboard screens directly in the client
+- Server operations views for settings, users, libraries, logs, devices, and analytics
+- Reduced context switching when managing a server from a mobile or desktop client
+
+### Multi-Server Unified Library
+- Connect to multiple Jellyfin and/or Emby servers simultaneously under one UI
+- Unified library view merges content from all servers - browse, search, and play without switching
+- Libraries display as "Library Name (Server Name)" when multiple servers are active
+- Aggregated Continue Watching, Next Up, and Latest rows pull from every connected server
+- Toggle unified mode on or off per preference; works independently per server type
+
+### Featured Media Bar
+- Rotating featured hero content on the home screen with rich backdrop presentation
+- Includes quick-glance metadata like ratings, genres, runtime, and overview
+- Designed to highlight trending and library content without leaving the home flow
+
+### SyncPlay
+- Group watch support with synchronized playback across participants
+- SyncPlay entry points are available in app navigation and settings-driven controls
+- Built for shared viewing sessions while preserving local playback controls
+
+### Ratings Integration (MDBList + TMDB)
+- Optional MDBList ratings support with multiple rating sources shown in item details
+- TMDB episode ratings support for episodic content where available
+- Rating display can be customized through settings
+
+### Trickplay and Media Segment Controls
+- Trickplay preview support for improved scrubbing and seek navigation
+- Media segment handling for intros, credits, and other detected segments
+- Playback controls remain consistent across streaming and offline scenarios
+
+### Live TV & DVR
+- Built-in Live TV browsing and playback screens
+- Electronic Program Guide (EPG) style scheduling views
+- DVR recordings and schedule management interfaces integrated in-app
+
+### In-App Trailer Previews
+- Trailer playback support directly in-app from item detail contexts
+- Uses resilient trailer source resolution for better playback reliability
+- Lets users preview content without leaving the Moonfin experience
+
+### Advanced Playback Controls
+- Fine-grained subtitle and audio delay adjustment during playback
+- Pre-playback track selection and ongoing track control support
+- Includes features like still-watching flow support and next-up handling
+
+### Home Row Customization
+- Reorder and toggle home sections (for example, Continue Watching, Next Up, Latest)
+- Home row preferences are compatible with plugin-backed sync workflows
+- Lets users tailor discovery layout to their personal viewing habits
+
+### Parental Controls & PIN
+- PIN code configuration support for sensitive settings/actions
+- Parental controls include configurable content/rating restrictions
+- Works alongside account and preference-level customization paths
+
+### Automatic Update Checks
+- Built-in app update checks with configurable cadence behavior
+- Surfaces update availability in-app to reduce manual version tracking
+- Designed to keep clients current across supported platforms
+
+## Installation
+
+### Pre-built Releases
+Download platform artifacts from the [Releases page](https://github.com/Moonfin-Client/Mobile-Desktop/releases).
+
+### Android
+- Primary output: APK (`Moonfin-android.apk` / `app-release.apk`)
+- Recommended for Android phones and tablets
+
+### iOS
+- Build script produces unsigned IPA by default for user-side signing workflows
+
+### Desktop
+- Windows installer and portable build outputs
+- Linux packaging via tarball/AppImage/deb/rpm/snap/flatpak (depending on tools)
+- macOS app bundle build support
+
+## Building from Source
+
+### Required Toolchain Versions
 - Flutter SDK: stable channel, 3.41+
 - Dart SDK: 3.11+ (see `environment.sdk` in `pubspec.yaml`)
 
-## Prerequisites
-
+### Prerequisites
 - [Flutter SDK](https://docs.flutter.dev/get-started/install)
 - [Git](https://git-scm.com/)
 
-## Getting Started
+### Quick Start
 
 ```bash
-# Clone the repo
-git clone <repo-url>
+git clone https://github.com/Moonfin-Client/Mobile-Desktop.git
 cd Mobile-Desktop
-
-# Install dependencies
 flutter pub get
 ```
 
-## Building for Windows
+### Platform Build Commands
 
-### Requirements
-
-1. **Windows 10 or Windows 11**
-
-2. **PowerShell 5.1+**
-   - Included with modern Windows installations
-
-3. **Git**
-   - Install from [git-scm.com](https://git-scm.com/)
-
-4. **Flutter SDK**
-   - Stable channel, 3.41+
-   - Either add `flutter` to `PATH` or install it at `C:\flutter\bin\flutter.bat`
-   - Verify with:
-     ```powershell
-     flutter doctor -v
-     ```
-
-5. **Visual Studio 2022** (Community edition or higher)
-
-6. The following Visual Studio workloads/components (install via Visual Studio Installer → Modify):
-   - **Desktop development with C++** workload
-   - **MSVC v142+ C++ x64/x86 build tools** (included in the workload)
-   - **C++ CMake tools for Windows** (included in the workload)
-   - **Windows 10 SDK** (10.0.19041.0 or later)
-   - **C++ ATL for latest build tools** (required by `flutter_secure_storage`)
-
-   You can also install these from an **elevated (Admin) PowerShell**:
-   ```powershell
-   & 'C:\Program Files (x86)\Microsoft Visual Studio\Installer\vs_installer.exe' modify `
-     --installPath 'C:\Program Files\Microsoft Visual Studio\2022\Community' `
-     --add Microsoft.VisualStudio.Workload.NativeDesktop `
-     --add Microsoft.VisualStudio.Component.VC.Tools.x86.x64 `
-     --add Microsoft.VisualStudio.Component.VC.CMake.Project `
-     --add Microsoft.VisualStudio.Component.Windows10SDK.19041 `
-     --add Microsoft.VisualStudio.Component.VC.ATL `
-     --passive --norestart
-   ```
-
-7. **Inno Setup 6**
-   - Install from [innosetup.com](https://jrsoftware.org/isinfo.php)
-   - The build script auto-detects `ISCC.exe` from common install paths and registry entries
-
-### One-time setup checklist
-
-Run these checks before the first Windows build:
-
-```powershell
-flutter doctor -v
-where flutter
-```
-
-Confirm these work:
-- `flutter doctor -v` shows Windows desktop toolchain ready
-- Visual Studio C++ desktop components are installed
-- Inno Setup 6 is installed
-
-### One-command full rebuild installer
-
-From the repo root, run:
-
-```powershell
-.\build-windows.ps1
-```
-
-What this does:
-- runs `flutter clean`
-- runs `flutter pub get`
-- builds Windows release
-- builds the Inno Setup installer
-  - reads the installer version automatically from `pubspec.yaml`
-- copies the final installer to the repo root
-
-Final outputs:
-- Root copy: `Moonfin-Setup-x64.exe`
-- Build copy: `build\windows\installer\Moonfin-Setup-x64.exe`
-
-Generated during the build:
-- `build\windows\installer\moonfin.generated.iss`
-
-### Example release flow
-
-```powershell
-git pull
-.\build-windows.ps1
-```
-
-After the script finishes, share or test:
-- `Moonfin-Setup-x64.exe`
-
-### Portable EXE only
-
-```bash
-flutter build windows --release
-```
-
-The output is a self-contained folder at:
-```
-build\windows\x64\runner\Release\
-```
-Copy the entire `Release` folder to distribute. Run `moonfin.exe` to launch.
-
-### MSIX Installer (Optional)
-
-```bash
-flutter pub run msix:create
-```
-
-The `.msix` installer will be generated at:
-```
-build\windows\x64\runner\Release\moonfin.msix
-```
-
-## Building for Android
-
-### Requirements
-
-- **Supported host OS:** Linux, macOS, or Windows
-- [Android Studio](https://developer.android.com/studio) with Android SDK
-- Android SDK Build-Tools, Platform-Tools, and an Android platform
-- [Flutter SDK](https://docs.flutter.dev/get-started/install) (stable channel, 3.41+)
-  - Either add `flutter` to `PATH`, set `FLUTTER_BIN`, or install it in one of these common locations used by the build script:
-    - `~/flutter/bin/flutter`
-    - `~/Documents/flutter/bin/flutter`
-    - `~/snap/flutter/common/flutter/bin/flutter`
-
-### One-time setup checklist
-
-Run these checks before the first Android build:
-
-```bash
-flutter doctor -v
-flutter doctor --android-licenses
-```
-
-Confirm these work:
-- `flutter doctor -v` shows the Android toolchain ready
-- Android SDK and platform tools are installed
-- At least one Android platform is installed in Android Studio SDK Manager
-
-### One-command Android APK build
-
-On Linux or macOS, from the repo root, run:
-
+#### Android
 ```bash
 ./build-android.sh
 ```
 
-On Windows PowerShell, from the repo root, run:
-
+Windows PowerShell:
 ```powershell
 .\build-android.ps1
 ```
 
-What this does:
-- runs `flutter clean`
-- runs `flutter pub get`
-- builds a release APK for `arm64-v8a` and `armeabi-v7a`
-- excludes `x86_64` plugin JNI libraries during packaging
-- copies the final APK to the repo root
-
-Note:
-- This release flow targets ARM devices only. `x86_64` Android emulators are not supported by these release artifacts.
-
-Final outputs:
-- Root copy: `Moonfin-android.apk`
-- Build copy: `build/app/outputs/flutter-apk/app-release.apk`
-
-### Example release flow
-
-```bash
-git pull
-./build-android.sh
-```
-
-Windows PowerShell equivalent:
-
-```powershell
-git pull
-.\build-android.ps1
-```
-
-After the script finishes, share or test:
-- `Moonfin-android.apk`
-
-### Manual Android builds
-
-Build a release APK:
-
-```bash
-flutter build apk --release --target-platform android-arm64,android-arm
-```
-
-Build a Google Play bundle:
-
-```bash
-flutter build appbundle --release
-```
-
-Outputs:
-- APK: `build/app/outputs/flutter-apk/app-release.apk`
-- AAB: `build/app/outputs/bundle/release/app-release.aab`
-
-### Windows note
-
-Android builds do not require Linux specifically. They can be built on Windows too.
-Use `build-android.ps1` on Windows PowerShell.
-
-## Building for iOS
-
-### Requirements
-
-- macOS with [Xcode](https://developer.apple.com/xcode/) installed
-- Valid Apple Developer account (for device/distribution builds)
-- CocoaPods: `sudo gem install cocoapods`
-
-### One-command iOS build
-
-From the repo root, run:
-
+#### iOS (macOS)
 ```bash
 ./build-ios.sh
 ```
 
-What this does:
-- runs `flutter clean`
-- runs `flutter pub get`
-- builds an unsigned iOS archive
-- packages an unsigned IPA for user-side signing
-- copies the unsigned IPA to the repo root
-
-Default behavior:
-- unsigned IPA output for open-source release distribution
-- intended for end users to sign locally (AltStore, Sideloadly, Xcode, etc.)
-
-Private local config:
-- create `build-ios.private.env` next to the script
-- a template is provided in `build-ios.private.env.example`
-
-Environment overrides:
-- `IOS_CODESIGN=1` to enable signed IPA export
-- `IOS_EXPORT_METHOD=development|ad-hoc|app-store|enterprise`
-- `IOS_EXPORT_OPTIONS_PLIST=/absolute/path/ExportOptions.plist`
-- `IOS_CODESIGN=0` keeps unsigned IPA mode (default)
-- `FLUTTER_BIN=/absolute/path/to/flutter`
-
-Final outputs:
-- Unsigned IPA root copy: `Moonfin-ios-unsigned.ipa` (default)
-- Unsigned IPA build copy: `build/ios/ipa/Moonfin-unsigned.ipa` (default)
-- Signed IPA root copy: `Moonfin-ios.ipa` when `IOS_CODESIGN=1`
-- Signed IPA build copy: `build/ios/ipa/*.ipa` when `IOS_CODESIGN=1`
-
-Examples:
-
-```bash
-./build-ios.sh
-IOS_CODESIGN=1 IOS_EXPORT_METHOD=development ./build-ios.sh
-IOS_CODESIGN=1 IOS_EXPORT_METHOD=ad-hoc ./build-ios.sh
-```
-
-```bash
-cd ios && pod install && cd ..
-flutter build ios --release
-```
-
-For an IPA (distribution):
-```bash
-flutter build ipa --release
-```
-
-Output: `build/ios/ipa/moonfin.ipa`
-
-Notes:
-- A sideloadable IPA still needs signing. In practice that usually means a `development` or `ad-hoc` export.
-- `app-store` export is for App Store Connect submission, not direct sideloading.
-- By default the script packages an unsigned IPA intended for end users to sign locally (AltStore, Sideloadly, Xcode, etc.).
-
-## Building for macOS
-
-### Requirements
-
-- macOS with [Xcode](https://developer.apple.com/xcode/) installed
-- CocoaPods: `sudo gem install cocoapods`
-
-```bash
-flutter build macos --release
-```
-
-Output: `build/macos/Build/Products/Release/moonfin.app`
-
-## Building for Linux
-
-> **Windows users:** Linux packages require Linux tools. Use WSL2 or WSL1 to build Linux packages on Windows:
-> ```bash
-> wsl ./build-linux.sh all
-> ```
-
-### Requirements
-
-- **Build tools:** GCC, CMake, Ninja, pkg-config, GTK 3.0 development headers
-  - On Ubuntu/Debian:
-    ```bash
-    sudo apt install clang cmake ninja-build pkg-config libgtk-3-dev
-    ```
-- **Flutter SDK:** (stable channel, 3.41+)
-  - Either add `flutter` to `PATH`, set `FLUTTER_BIN`, or install in common locations (checked by build script)
-
-### One-command build with multi-format packaging
-
-Build Flutter binary and create multiple distribution packages at once.
-
-**On Linux or macOS**, from the repo root, run:
-
-```bash
-./build-linux.sh [FORMAT]
-```
-
-**On Windows**, use WSL to run the same bash script:
-
-```bash
-wsl ./build-linux.sh [FORMAT]
-```
-
-This creates a release binary and packages it in your chosen format(s).
-
-#### Available package formats
-
-Run `./build-linux.sh all` to attempt building all available formats.
-
-**Format names are lowercase without file extensions** (e.g., `tarball` not `tar.gz`):
-
-| Format Name | Output File | Tools Required | Best For |
-|-------------|-------------|-----------------|----------|
-| `tarball` | `*.tar.gz` | None (built-in) | Universal distribution |
-| `appimage` | `*.AppImage` | `appimaketool` | Any Linux distro, single file |
-| `deb` | `*.deb` | `dpkg-tools` | Ubuntu, Debian, Mint |
-| `rpm` | `*.rpm` | `rpmbuild` | Fedora, RHEL, openSUSE |
-| `snap` | `*.snap` | `snapcraft` | Ubuntu snapcraft ecosystem |
-| `flatpak` | `*.flatpak` | `flatpak-builder` | Cross-distro, sandboxed |
-
-#### Examples
-
-Build all formats (skipped if tools missing):
-
+#### Linux
 ```bash
 ./build-linux.sh all
 ```
 
-Build specific formats (use lowercase names):
-
+#### macOS
 ```bash
-./build-linux.sh tarball     # Tarball only
-./build-linux.sh appimage    # AppImage only
-./build-linux.sh deb         # Debian package only
-./build-linux.sh rpm         # RPM package only
-./build-linux.sh snap        # Snap package only
-./build-linux.sh flatpak     # Flatpak package only
+flutter build macos --release
 ```
 
-Output artifacts are copied to the project root (alongside `build-linux.sh`):
-
-```
-Moonfin-linux-x86_64.tar.gz
-Moonfin-linux-x86_64.AppImage
-moonfin_0.1.0_amd64.deb
-moonfin-0.1.0-1.x86_64.rpm
+#### Windows
+```powershell
+.\build-windows.ps1
 ```
 
-#### Tool installation examples
+## Development
 
-**AppImage tools** (on Ubuntu/Debian):
+### Developer Notes
+- Use Flutter stable and keep dependencies up to date
+- Validate changes with `flutter analyze` before PRs
+- Test playback and navigation flows on at least one target platform
+- Prefer small, focused commits for easier review
 
-```bash
-wget https://github.com/AppImage/AppImageKit/releases/download/continuous/appimagetool-x86_64.AppImage
-chmod +x appimagetool-x86_64.AppImage
-sudo mv appimagetool-x86_64.AppImage /usr/local/bin/appimagetool
-```
+## Contributing
 
-**.deb tools** (already installed with `build-essential`):
+We welcome contributions to Moonfin.
 
-```bash
-sudo apt install dpkg-dev
-```
+### Guidelines
+1. Check existing issues before opening new ones.
+2. Discuss major feature changes before implementation.
+3. Follow existing code style and project conventions.
+4. Test your changes on relevant platforms.
+5. Keep PR scope focused and clearly documented.
 
-**.rpm tools** (Fedora/openSUSE):
+### Pull Request Process
+1. Fork the repository.
+2. Create a branch (`git checkout -b feature/your-change`).
+3. Implement and test your changes.
+4. Run static checks (`flutter analyze`).
+5. Open a PR with context, screenshots/logs when useful, and test notes.
 
-```bash
-sudo dnf install rpm-build  # Fedora
-sudo zypper install rpm-build-devel  # openSUSE
-```
+## Support & Community
 
-**Snap tools** (Ubuntu):
+- **Issues**: [GitHub Issues](https://github.com/Moonfin-Client/Mobile-Desktop/issues)
+- **Discussions**: [GitHub Discussions](https://github.com/Moonfin-Client/Mobile-Desktop/discussions)
+- **Upstream Jellyfin**: [jellyfin.org](https://jellyfin.org)
 
-```bash
-sudo snap install snapcraft --classic
-```
+## Credits
 
-**Flatpak tools**:
+Moonfin is built on the work of:
+- **[Jellyfin Project](https://jellyfin.org)**
+- **Jellyfin client contributors**
+- **Moonfin contributors**
+- **[MakD](https://github.com/MakD)** - Original Jellyfin-Media-Bar concept that inspired our featured media bar
 
-```bash
-sudo apt install flatpak flatpak-builder
-```
+Some Admin analytics UX ideas were inspired by the open-source project [MediaLyze](https://github.com/frederikemmer/MediaLyze) by Frederik Emmer (MIT).
 
-### Manual Linux build (without packaging)
+## License
 
-Build a release binary only:
+This project is licensed under GPL v2 (inherited from upstream Jellyfin client foundations). See [LICENSE](LICENSE) for details.
 
-```bash
-flutter build linux --release
-```
+---
 
-Output: `build/linux/x64/release/bundle/`
-
-To run:
-
-```bash
-./build/linux/x64/release/bundle/moonfin
-```
-
-The bundle contains the binary, libraries, and all dependencies needed.
-
-## Troubleshooting
-
-- Run `flutter doctor -v` to diagnose missing dependencies for any platform.
-- If you see a `RepeatMode` ambiguity error, ensure the Flutter material import hides it:
-  ```dart
-  import 'package:flutter/material.dart' hide RepeatMode;
-  ```
-- On Windows, if `atlstr.h` is missing, install the **C++ ATL** component via Visual Studio Installer.
+<p align="center">
+  <strong>Moonfin</strong> is an independent project and is not affiliated with the Jellyfin project.<br>
+  <a href="https://github.com/Moonfin-Client">← Back to main Moonfin project</a>
+</p>
