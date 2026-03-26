@@ -7,6 +7,27 @@ import 'package:package_info_plus/package_info_plus.dart';
 import '../../preference/user_preferences.dart';
 import '../../util/platform_detection.dart';
 
+enum DesktopUpdateCheckStatus {
+  updateAvailable,
+  upToDate,
+  checkFailed,
+  unsupportedPlatform,
+  disabledByPreference,
+  rateLimited,
+  alreadyNotified,
+  noMatchingAsset,
+}
+
+class DesktopUpdateCheckResult {
+  final DesktopUpdateCheckStatus status;
+  final DesktopUpdateInfo? update;
+
+  const DesktopUpdateCheckResult({
+    required this.status,
+    this.update,
+  });
+}
+
 class DesktopUpdateInfo {
   final String version;
   final Uri downloadUri;
@@ -17,27 +38,6 @@ class DesktopUpdateInfo {
     required this.downloadUri,
     required this.assetName,
   });
-
-  enum DesktopUpdateCheckStatus {
-    updateAvailable,
-    upToDate,
-    checkFailed,
-    unsupportedPlatform,
-    disabledByPreference,
-    rateLimited,
-    alreadyNotified,
-    noMatchingAsset,
-  }
-
-  class DesktopUpdateCheckResult {
-    final DesktopUpdateCheckStatus status;
-    final DesktopUpdateInfo? update;
-
-    const DesktopUpdateCheckResult({
-      required this.status,
-      this.update,
-    });
-  }
 }
 
 class AppUpdateService {
