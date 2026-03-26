@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:audio_session/audio_session.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -30,6 +32,15 @@ void main() async {
   WidgetsFlutterBinding.ensureInitialized();
   _configureImageCache();
   MediaKit.ensureInitialized();
+
+  // On Linux the GTK font pipeline loads fonts asynchronously. The first frame
+  // can render before MaterialIcons and other fonts are ready, causing icons to
+  // appear blank. Pumping a warm-up frame gives the font loader time to finish.
+  // The issue is intermittent and goes away on re-run once the OS font cache
+  // is warm, which confirms the timing root cause.
+  if (Platform.isLinux) {
+    WidgetsBinding.instance.scheduleWarmUpFrame();
+  }
 
   if (PlatformDetection.isMobile) {
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
