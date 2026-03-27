@@ -19,7 +19,6 @@ class SeerrConfigScreen extends StatefulWidget {
 
 class _SeerrConfigScreenState extends State<SeerrConfigScreen> {
   late final PluginSyncService _syncService;
-  late final UserPreferences _prefs;
   late final SeerrPreferences _seerrPrefs;
 
   String? _seerrUsername;
@@ -29,11 +28,9 @@ class _SeerrConfigScreenState extends State<SeerrConfigScreen> {
   void initState() {
     super.initState();
     _syncService = GetIt.instance<PluginSyncService>();
-    _prefs = GetIt.instance<UserPreferences>();
     _seerrPrefs = GetIt.instance<SeerrPreferences>();
     _rows = _seerrPrefs.rowsConfig;
     _syncService.addListener(_onSyncStateChanged);
-    _ensureSeerrDisabledIfUnavailable();
     _loadSeerrUsername();
   }
 
@@ -45,7 +42,6 @@ class _SeerrConfigScreenState extends State<SeerrConfigScreen> {
 
   void _onSyncStateChanged() {
     if (!mounted) return;
-    _ensureSeerrDisabledIfUnavailable();
     setState(() {
       _rows = _seerrPrefs.rowsConfig;
     });
@@ -69,14 +65,6 @@ class _SeerrConfigScreenState extends State<SeerrConfigScreen> {
       _setSeerrUsername(status.authenticated ? status.displayName : null);
     } catch (_) {
       _setSeerrUsername(null);
-    }
-  }
-
-  void _ensureSeerrDisabledIfUnavailable() {
-    if (!_syncService.pluginAvailable || !_syncService.seerrEnabled) {
-      if (_prefs.get(UserPreferences.seerrEnabled)) {
-        _prefs.set(UserPreferences.seerrEnabled, false);
-      }
     }
   }
 
