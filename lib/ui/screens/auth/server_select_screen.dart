@@ -165,7 +165,7 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
       footer: Padding(
         padding: const EdgeInsets.only(top: 16),
         child: Text(
-          'Moonfin version 0.1.0',
+          'Moonfin version 1.0.0',
           style: Theme.of(context).textTheme.bodySmall?.copyWith(
             color: Colors.white.withValues(alpha: 0.4),
           ),
