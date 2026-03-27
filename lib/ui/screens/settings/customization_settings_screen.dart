@@ -105,12 +105,28 @@ class _CustomizationSettingsScreenState extends State<CustomizationSettingsScree
     );
   }
 
+  Widget _buildProfileTab(String profile, String? currentDeviceProfile) {
+    return _ProfileTabButton(
+      label: _profileLabel(profile),
+      selected: _selectedProfile == profile,
+      current: currentDeviceProfile == profile,
+      onTap: () {
+        _syncService.setSelectedCustomizationProfile(profile);
+      },
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final pluginCustomizationEnabled =
         _syncService.pluginAvailable &&
         _prefs.get(UserPreferences.pluginSyncEnabled);
     final currentDeviceProfile = _syncService.currentDeviceProfile;
+    final supportedProfiles = PluginSyncService.supportedProfiles;
+    final hasGlobalProfile = supportedProfiles.contains('global');
+    final deviceProfiles = supportedProfiles
+        .where((profile) => profile != 'global')
+        .toList(growable: false);
     final entries = buildCustomizationEntries(
       isMobile: PlatformDetection.isMobile,
     );
@@ -144,27 +160,26 @@ class _CustomizationSettingsScreenState extends State<CustomizationSettingsScree
                         color: Theme.of(context).colorScheme.surfaceContainerHighest,
                         borderRadius: BorderRadius.circular(14),
                       ),
-                      child: Row(
+                      child: Column(
                         children: [
-                          for (var i = 0;
-                              i < PluginSyncService.supportedProfiles.length;
-                              i++) ...[
-                            if (i > 0) const SizedBox(width: 4),
-                            Expanded(
-                              child: _ProfileTabButton(
-                                label: _profileLabel(
-                                  PluginSyncService.supportedProfiles[i],
-                                ),
-                                selected: _selectedProfile ==
-                                    PluginSyncService.supportedProfiles[i],
-                                current:
-                                    currentDeviceProfile == PluginSyncService.supportedProfiles[i],
-                                onTap: () {
-                                  _syncService.setSelectedCustomizationProfile(
-                                    PluginSyncService.supportedProfiles[i],
-                                  );
-                                },
-                              ),
+                          if (hasGlobalProfile)
+                            _buildProfileTab('global', currentDeviceProfile),
+                          if (deviceProfiles.isNotEmpty) ...[
+                            const SizedBox(height: 4),
+                            Row(
+                              children: [
+                                for (var i = 0;
+                                    i < deviceProfiles.length;
+                                    i++) ...[
+                                  if (i > 0) const SizedBox(width: 4),
+                                  Expanded(
+                                    child: _buildProfileTab(
+                                      deviceProfiles[i],
+                                      currentDeviceProfile,
+                                    ),
+                                  ),
+                                ],
+                              ],
                             ),
                           ],
                         ],
