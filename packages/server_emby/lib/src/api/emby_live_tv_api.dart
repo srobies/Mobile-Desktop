@@ -38,8 +38,8 @@ class EmbyLiveTvApi implements LiveTvApi {
     String? userId,
   }) async {
     final response = await _dio.get('/LiveTv/Programs', queryParameters: {
-      if (startDate != null) 'MinStartDate': startDate.toIso8601String(),
-      if (endDate != null) 'MaxEndDate': endDate.toIso8601String(),
+      if (startDate != null) 'MinEndDate': startDate.toIso8601String(),
+      if (endDate != null) 'MaxStartDate': endDate.toIso8601String(),
       if (channelIds != null && channelIds.isNotEmpty) 'ChannelIds': channelIds.join(','),
       if (fields != null) 'Fields': fields,
       if (enableTotalRecordCount != null) 'EnableTotalRecordCount': enableTotalRecordCount,
