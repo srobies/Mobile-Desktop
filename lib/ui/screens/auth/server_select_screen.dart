@@ -127,6 +127,32 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
     }
   }
 
+  Widget _buildFooterActionButton({
+    required VoidCallback? onPressed,
+    required Widget icon,
+    required String label,
+  }) {
+    return OutlinedButton.icon(
+      onPressed: onPressed,
+      icon: icon,
+      label: Text(
+        label,
+        style: const TextStyle(fontSize: 15),
+        maxLines: 1,
+        softWrap: false,
+        overflow: TextOverflow.fade,
+      ),
+      style: OutlinedButton.styleFrom(
+        padding: const EdgeInsets.symmetric(
+          horizontal: 8,
+          vertical: 12,
+        ),
+        side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
+        foregroundColor: Colors.white.withValues(alpha: 0.8),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final servers = _serverRepo.servers;
@@ -214,57 +240,44 @@ class _ServerSelectScreenState extends State<ServerSelectScreen> {
               ),
             ),
           const SizedBox(height: 16),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isConnecting ? null : _showAddServerDialog,
-                  icon: const Icon(Icons.add, size: 16),
-                  label: const Text(
-                    'Add Server',
-                    style: TextStyle(fontSize: 15),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.fade,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 12,
-                    ),
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                    foregroundColor: Colors.white.withValues(alpha: 0.8),
-                  ),
+          LayoutBuilder(
+            builder: (context, constraints) {
+              final isVerySmall = constraints.maxWidth < 360;
+              final addServerButton = _buildFooterActionButton(
+                onPressed: _isConnecting ? null : _showAddServerDialog,
+                icon: const Icon(Icons.add, size: 16),
+                label: 'Add Server',
+              );
+
+              final embyConnectButton = _buildFooterActionButton(
+                onPressed: _isConnecting
+                    ? null
+                    : () => context.go(Destinations.embyConnect),
+                icon: const ServerTypeIcon(
+                  serverType: ServerType.emby,
+                  size: 16,
                 ),
-              ),
-              const SizedBox(width: 8),
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _isConnecting
-                      ? null
-                      : () => context.go(Destinations.embyConnect),
-                  icon: const ServerTypeIcon(
-                    serverType: ServerType.emby,
-                    size: 16,
-                  ),
-                  label: const Text(
-                    'Emby Connect',
-                    style: TextStyle(fontSize: 15),
-                    maxLines: 1,
-                    softWrap: false,
-                    overflow: TextOverflow.fade,
-                  ),
-                  style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 8,
-                      vertical: 12,
-                    ),
-                    side: BorderSide(color: Colors.white.withValues(alpha: 0.2)),
-                    foregroundColor: Colors.white.withValues(alpha: 0.8),
-                  ),
-                ),
-              ),
-            ],
+                label: 'Emby Connect',
+              );
+
+              if (isVerySmall) {
+                return Column(
+                  children: [
+                    SizedBox(width: double.infinity, child: addServerButton),
+                    const SizedBox(height: 8),
+                    SizedBox(width: double.infinity, child: embyConnectButton),
+                  ],
+                );
+              }
+
+              return Row(
+                children: [
+                  Expanded(child: addServerButton),
+                  const SizedBox(width: 8),
+                  Expanded(child: embyConnectButton),
+                ],
+              );
+            },
           ),
         ],
       ),
