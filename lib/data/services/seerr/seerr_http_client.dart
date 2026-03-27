@@ -312,6 +312,16 @@ class SeerrHttpClient {
     _requireSuccess(response, opName);
   }
 
+  Future<Map<String, dynamic>> getRecentlyAdded({int take = 20}) async {
+    final response = await _dio.get(
+      _apiUrl('media'),
+      queryParameters: {'filter': 'allavailable', 'sort': 'mediaAdded', 'take': take},
+      options: _authOptions(),
+    );
+    _requireSuccess(response, 'getRecentlyAdded');
+    return response.data as Map<String, dynamic>;
+  }
+
   Future<Map<String, dynamic>> getTrending({int limit = 20, int offset = 0}) async {
     final page = (offset ~/ limit) + 1;
     final response = await _dio.get(

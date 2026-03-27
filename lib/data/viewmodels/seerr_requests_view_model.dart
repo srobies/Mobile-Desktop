@@ -8,14 +8,41 @@ class SeerrRequestsState {
   final bool isRefreshing;
   final String? error;
   final List<SeerrRequest> requests;
+  final SeerrUser? currentUser;
+  final int? actioningRequestId;
 
   const SeerrRequestsState({
     this.isLoading = false,
     this.isRefreshing = false,
     this.error,
     this.requests = const [],
+    this.currentUser,
+    this.actioningRequestId,
   });
+
+  bool get canManageRequests =>
+      currentUser?.hasPermission(SeerrPermission.manageRequests) ?? false;
+
+  SeerrRequestsState copyWith({
+    bool? isLoading,
+    bool? isRefreshing,
+    String? error,
+    List<SeerrRequest>? requests,
+    SeerrUser? currentUser,
+    Object? actioningRequestId = _sentinel,
+  }) => SeerrRequestsState(
+    isLoading: isLoading ?? this.isLoading,
+    isRefreshing: isRefreshing ?? this.isRefreshing,
+    error: error,
+    requests: requests ?? this.requests,
+    currentUser: currentUser ?? this.currentUser,
+    actioningRequestId: actioningRequestId == _sentinel
+        ? this.actioningRequestId
+        : actioningRequestId as int?,
+  );
 }
+
+const _sentinel = Object();
 
 class SeerrRequestsViewModel extends ChangeNotifier {
   final SeerrRepository _repo;
@@ -30,13 +57,16 @@ class SeerrRequestsViewModel extends ChangeNotifier {
       isLoading: !isRefresh,
       isRefreshing: isRefresh,
       requests: isRefresh ? _state.requests : const [],
+      currentUser: _state.currentUser,
     );
     notifyListeners();
 
     try {
       await _repo.ensureInitialized();
       final user = await _repo.getCurrentUser();
-      final response = await _repo.getRequests(requestedBy: user.id);
+      final response = await _repo.getRequests(
+        requestedBy: user.canViewAllRequests ? null : user.id,
+      );
 
       final now = DateTime.now();
       final filtered = response.results.where((r) {
@@ -51,7 +81,7 @@ class SeerrRequestsViewModel extends ChangeNotifier {
         return true;
       }).toList();
 
-      _state = SeerrRequestsState(requests: filtered);
+      _state = SeerrRequestsState(requests: filtered, currentUser: user);
     } catch (e) {
       _state = SeerrRequestsState(error: e.toString());
     }
@@ -59,4 +89,23 @@ class SeerrRequestsViewModel extends ChangeNotifier {
   }
 
   Future<void> refresh() => load(isRefresh: true);
+
+  Future<void> approveRequest(int requestId) =>
+      _runAction(requestId, () => _repo.approveRequest(requestId));
+
+  Future<void> declineRequest(int requestId) =>
+      _runAction(requestId, () => _repo.declineRequest(requestId));
+
+  Future<void> _runAction(int requestId, Future<void> Function() action) async {
+    _state = _state.copyWith(actioningRequestId: requestId);
+    notifyListeners();
+
+    try {
+      await action();
+      await load(isRefresh: true);
+    } catch (_) {
+      _state = _state.copyWith(actioningRequestId: null);
+      notifyListeners();
+    }
+  }
 }

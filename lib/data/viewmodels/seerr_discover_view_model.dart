@@ -207,6 +207,8 @@ class SeerrDiscoverViewModel extends ChangeNotifier {
       switch (row.type) {
         case SeerrRowType.recentRequests:
           await _loadRecentRequests(index);
+        case SeerrRowType.recentlyAdded:
+          await _loadRecentlyAdded(index);
         case SeerrRowType.movieGenres:
           await _loadGenres(index, isMovie: true);
         case SeerrRowType.seriesGenres:
@@ -240,6 +242,35 @@ class SeerrDiscoverViewModel extends ChangeNotifier {
       _updateRow(index, row.copyWith(isLoading: false));
     }
   }
+
+  Future<void> _loadRecentlyAdded(int index) async {
+    final row = _rows[index];
+    try {
+      final media = await _repo.getRecentlyAdded(limit: _prefs.fetchLimit.limit);
+      final items = await Future.wait(media.map(_mediaToDiscoverItem));
+      _updateRow(index, row.copyWith(items: items, isLoading: false));
+    } catch (_) {
+      _updateRow(index, row.copyWith(isLoading: false));
+    }
+  }
+
+  Future<SeerrDiscoverItem> _mediaToDiscoverItem(SeerrMedia media) =>
+      _enrichRequestItem(SeerrDiscoverItem(
+        id: media.tmdbId ?? media.id,
+        title: media.title,
+        name: media.name,
+        overview: media.overview,
+        releaseDate: media.releaseDate,
+        firstAirDate: media.firstAirDate,
+        mediaType: media.mediaType,
+        posterPath: media.posterPath,
+        backdropPath: media.backdropPath,
+        mediaInfo: SeerrMediaInfo(
+          id: media.id,
+          tmdbId: media.tmdbId,
+          status: media.status,
+        ),
+      ));
 
   Future<void> _loadRecentRequests(int index) async {
     final row = _rows[index];
@@ -402,6 +433,7 @@ class SeerrDiscoverViewModel extends ChangeNotifier {
 
   static String _titleForRowType(SeerrRowType type) => switch (type) {
     SeerrRowType.recentRequests => 'Recent Requests',
+    SeerrRowType.recentlyAdded => 'Recently Added',
     SeerrRowType.trending => 'Trending',
     SeerrRowType.popularMovies => 'Popular Movies',
     SeerrRowType.movieGenres => 'Movie Genres',

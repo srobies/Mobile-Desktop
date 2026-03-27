@@ -104,10 +104,17 @@ class _SeerrRequestsScreenState extends State<SeerrRequestsScreen> {
       child: ListView.builder(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 80),
         itemCount: s.requests.length,
-        itemBuilder: (context, index) => _RequestCard(
-          request: s.requests[index],
-          onTap: () => _onRequestTap(s.requests[index]),
-        ),
+        itemBuilder: (context, index) {
+          final req = s.requests[index];
+          return _RequestCard(
+            request: req,
+            canManage: s.canManageRequests,
+            isActioning: s.actioningRequestId == req.id,
+            onTap: () => _onRequestTap(req),
+            onApprove: () => vm.approveRequest(req.id),
+            onDecline: () => vm.declineRequest(req.id),
+          );
+        },
       ),
     );
   }
@@ -126,9 +133,20 @@ class _SeerrRequestsScreenState extends State<SeerrRequestsScreen> {
 
 class _RequestCard extends StatelessWidget {
   final SeerrRequest request;
+  final bool canManage;
+  final bool isActioning;
   final VoidCallback? onTap;
+  final VoidCallback? onApprove;
+  final VoidCallback? onDecline;
 
-  const _RequestCard({required this.request, this.onTap});
+  const _RequestCard({
+    required this.request,
+    required this.canManage,
+    required this.isActioning,
+    this.onTap,
+    this.onApprove,
+    this.onDecline,
+  });
 
   @override
   Widget build(BuildContext context) {
@@ -197,10 +215,48 @@ class _RequestCard extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      Text(
-                        'Requested by $requester',
-                        style: const TextStyle(
-                            color: Colors.white38, fontSize: 11),
+                      Row(
+                        children: [
+                          Expanded(
+                            child: Text(
+                              'Requested by $requester',
+                              style: const TextStyle(
+                                  color: Colors.white54, fontSize: 12),
+                              overflow: TextOverflow.ellipsis,
+                            ),
+                          ),
+                          if (canManage &&
+                              request.status == SeerrRequest.statusPending) ...[
+                            if (isActioning)
+                              const SizedBox(
+                                width: 18,
+                                height: 18,
+                                child: CircularProgressIndicator(
+                                    strokeWidth: 2, color: Colors.white54),
+                              )
+                            else ...[
+                              IconButton(
+                                onPressed: onApprove,
+                                icon: const Icon(Icons.check_circle_outline,
+                                    color: Colors.green, size: 20),
+                                tooltip: 'Approve',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                              const SizedBox(width: 4),
+                              IconButton(
+                                onPressed: onDecline,
+                                icon: Icon(Icons.cancel_outlined,
+                                    color: Colors.red[300], size: 20),
+                                tooltip: 'Decline',
+                                visualDensity: VisualDensity.compact,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ],
+                        ],
                       ),
                     ],
                   ),

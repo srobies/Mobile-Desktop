@@ -232,6 +232,7 @@ enum SeerrFetchLimit {
 
 enum SeerrRowType {
   recentRequests('recent_requests'),
+  recentlyAdded('recently_added'),
   trending('trending'),
   popularMovies('popular_movies'),
   movieGenres('movie_genres'),

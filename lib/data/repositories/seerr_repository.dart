@@ -504,6 +504,13 @@ class SeerrRepository {
   Future<void> deleteRequest(int requestId) =>
       _withClient((c) => c.deleteRequest(requestId));
 
+  Future<List<SeerrMedia>> getRecentlyAdded({int limit = 20}) =>
+      _withClient((c) async {
+        final data = await c.getRecentlyAdded(take: limit);
+        final results = (data['results'] as List?)?.cast<Map<String, dynamic>>() ?? [];
+        return results.map(SeerrMedia.fromJson).toList();
+      });
+
   Future<void> approveRequest(int requestId) =>
       _withClient((c) => c.approveRequest(requestId));
 
