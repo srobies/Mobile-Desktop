@@ -408,13 +408,13 @@ class SeerrHttpClient {
     int offset = 0,
   }) async {
     final page = (offset ~/ limit) + 1;
+    final eq = Uri.encodeComponent(query);
+    var url = '${_apiUrl('search')}?query=$eq&page=$page';
+    if (mediaType != null) {
+      url += '&type=${Uri.encodeComponent(mediaType)}';
+    }
     final response = await _dio.get(
-      _apiUrl('search'),
-      queryParameters: {
-        'query': query,
-        'page': page,
-        if (mediaType != null) 'type': mediaType,
-      },
+      url,
       options: _authOptions(),
     );
     _requireSuccess(response, 'search');
