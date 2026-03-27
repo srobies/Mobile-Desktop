@@ -1,7 +1,9 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Builds an unsigned iOS IPA by default for user-side signing.
+# Builds both outputs with one command:
+# 1) unsigned IPA for local/user signing workflows
+# 2) signed App Store IPA for Transporter/App Store Connect upload
 # Optional local overrides can be placed in build-ios.private.env.
 
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -48,9 +50,14 @@ resolve_flutter() {
 }
 
 FLUTTER="$(resolve_flutter)"
-IOS_EXPORT_METHOD="${IOS_EXPORT_METHOD:-development}"
+IOS_EXPORT_METHOD="${IOS_EXPORT_METHOD:-app-store}"
 IOS_EXPORT_OPTIONS_PLIST="${IOS_EXPORT_OPTIONS_PLIST:-}"
-IOS_CODESIGN="${IOS_CODESIGN:-0}"
+
+if [ "$#" -gt 0 ]; then
+  echo "Error: this script no longer accepts positional arguments." >&2
+  echo "Run: ./build-ios.sh" >&2
+  exit 1
+fi
 
 if [ -n "$IOS_EXPORT_OPTIONS_PLIST" ] && [[ "$IOS_EXPORT_OPTIONS_PLIST" != /* ]]; then
   IOS_EXPORT_OPTIONS_PLIST="$REPO_ROOT/$IOS_EXPORT_OPTIONS_PLIST"
@@ -84,62 +91,53 @@ echo "Resolving packages..."
 
 rm -f "$ROOT_IPA_OUTPUT"
 rm -f "$ROOT_UNSIGNED_IPA_OUTPUT"
+rm -f "$IPA_DIR"/*.ipa 2>/dev/null || true
 
-build_args=(build ipa --release)
+echo "Building unsigned iOS archive..."
+"$FLUTTER" build ipa --release --no-codesign
 
-if [ "$IOS_CODESIGN" = "0" ]; then
-  echo "Building unsigned iOS archive..."
-  build_args+=(--no-codesign)
+if [ ! -d "$ARCHIVE_DIR" ]; then
+  echo "Error: expected archive directory not found: $ARCHIVE_DIR" >&2
+  exit 1
+fi
+
+APP_IN_ARCHIVE="$(find "$ARCHIVE_DIR" -type d -path '*/Products/Applications/*.app' | head -n 1)"
+if [ -z "$APP_IN_ARCHIVE" ]; then
+  echo "Error: .app not found in archive at $ARCHIVE_DIR" >&2
+  exit 1
+fi
+
+mkdir -p "$IPA_DIR"
+UNSIGNED_IPA_SOURCE="$IPA_DIR/${APP_NAME}-unsigned.ipa"
+rm -f "$UNSIGNED_IPA_SOURCE"
+
+TMP_DIR="$(mktemp -d)"
+trap 'rm -rf "$TMP_DIR"' EXIT
+mkdir -p "$TMP_DIR/Payload"
+cp -R "$APP_IN_ARCHIVE" "$TMP_DIR/Payload/"
+(
+  cd "$TMP_DIR"
+  zip -qry "$UNSIGNED_IPA_SOURCE" Payload
+)
+cp "$UNSIGNED_IPA_SOURCE" "$ROOT_UNSIGNED_IPA_OUTPUT"
+
+echo "Unsigned iOS archive created in: $ARCHIVE_DIR"
+echo "Unsigned IPA created: $UNSIGNED_IPA_SOURCE"
+echo "Unsigned IPA copied to root: $ROOT_UNSIGNED_IPA_OUTPUT"
+
+if [ -n "$IOS_EXPORT_OPTIONS_PLIST" ]; then
+  if [ ! -f "$IOS_EXPORT_OPTIONS_PLIST" ]; then
+    echo "Error: export options plist not found: $IOS_EXPORT_OPTIONS_PLIST" >&2
+    exit 1
+  fi
+  echo "Building signed App Store IPA with export options plist..."
+  "$FLUTTER" build ipa --release --export-options-plist="$IOS_EXPORT_OPTIONS_PLIST"
 else
-  if [ -n "$IOS_EXPORT_OPTIONS_PLIST" ]; then
-    if [ ! -f "$IOS_EXPORT_OPTIONS_PLIST" ]; then
-      echo "Error: export options plist not found: $IOS_EXPORT_OPTIONS_PLIST" >&2
-      exit 1
-    fi
-    echo "Building signed iOS IPA with export options plist..."
-    build_args+=(--export-options-plist="$IOS_EXPORT_OPTIONS_PLIST")
-  else
-    echo "Building signed iOS IPA with export method: $IOS_EXPORT_METHOD"
-    build_args+=(--export-method="$IOS_EXPORT_METHOD")
-  fi
+  echo "Building signed App Store IPA with export method: $IOS_EXPORT_METHOD"
+  "$FLUTTER" build ipa --release --export-method="$IOS_EXPORT_METHOD"
 fi
 
-"$FLUTTER" "${build_args[@]}"
-
-if [ "$IOS_CODESIGN" = "0" ]; then
-  if [ ! -d "$ARCHIVE_DIR" ]; then
-    echo "Error: expected archive directory not found: $ARCHIVE_DIR" >&2
-    exit 1
-  fi
-
-  APP_IN_ARCHIVE="$(find "$ARCHIVE_DIR" -type d -path '*/Products/Applications/*.app' | head -n 1)"
-  if [ -z "$APP_IN_ARCHIVE" ]; then
-    echo "Error: .app not found in archive at $ARCHIVE_DIR" >&2
-    exit 1
-  fi
-
-  mkdir -p "$IPA_DIR"
-  UNSIGNED_IPA_SOURCE="$IPA_DIR/${APP_NAME}-unsigned.ipa"
-  rm -f "$UNSIGNED_IPA_SOURCE"
-
-  TMP_DIR="$(mktemp -d)"
-  trap 'rm -rf "$TMP_DIR"' EXIT
-  mkdir -p "$TMP_DIR/Payload"
-  cp -R "$APP_IN_ARCHIVE" "$TMP_DIR/Payload/"
-  (
-    cd "$TMP_DIR"
-    zip -qry "$UNSIGNED_IPA_SOURCE" Payload
-  )
-  cp "$UNSIGNED_IPA_SOURCE" "$ROOT_UNSIGNED_IPA_OUTPUT"
-
-  echo "Unsigned iOS archive created in: $ARCHIVE_DIR"
-  echo "Unsigned IPA created: $UNSIGNED_IPA_SOURCE"
-  echo "Unsigned IPA copied to root: $ROOT_UNSIGNED_IPA_OUTPUT"
-  echo "This IPA must be signed by the end user before installation."
-  exit 0
-fi
-
-IPA_SOURCE="$(find "$IPA_DIR" -maxdepth 1 -type f -name '*.ipa' | head -n 1)"
+IPA_SOURCE="$(find "$IPA_DIR" -maxdepth 1 -type f -name '*.ipa' ! -name '*-unsigned.ipa' | head -n 1)"
 if [ -z "$IPA_SOURCE" ]; then
   echo "Error: IPA not found in $IPA_DIR" >&2
   exit 1
