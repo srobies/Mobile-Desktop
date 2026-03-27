@@ -19,7 +19,7 @@ class AboutScreen extends StatelessWidget {
           const SizedBox(height: 32),
           Center(child: Image.asset('assets/images/logo_and_text.png', height: 80)),
           const SizedBox(height: 4),
-          const Center(child: Text('Version 1..0')),
+          const Center(child: Text('Version 1.0.0')),
           const SizedBox(height: 24),
           const Divider(),
           ListTile(
