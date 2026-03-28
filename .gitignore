@@ -79,12 +79,14 @@ app.*.map.json
 /Moonfin_Linux_v*.tar.gz
 /Moonfin_Linux_v*.deb
 /Moonfin_Linux_v*.rpm
+/Moonfin_Linux_v*.flatpak
 /moonfin-*.tar.gz
 /moonfin-*.AppImage
 /moonfin_*.deb
 /moonfin-*.rpm
 /moonfin_*.snap
 /moonfin_*.flatpak
+/.flatpak-builder/
 /build-macos.private.env
 
 # macOS build artifacts

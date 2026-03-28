@@ -4,9 +4,32 @@ set -euo pipefail
 REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 APP_NAME="Moonfin"
 APP_ID="org.moonfin.linux"
-APP_ICON="$REPO_ROOT/assets/icons/logo.png"
+APP_ICON="$REPO_ROOT/assets/icons/moonfin.png"
 BUILD_DIR="$REPO_ROOT/build/linux/release/bundle"
 TEMP_DIR="$REPO_ROOT/build/linux/temp"
+
+get_deb_architecture() {
+  local machine
+  machine="$(uname -m)"
+
+  case "$machine" in
+    x86_64)
+      printf '%s\n' "amd64"
+      ;;
+    aarch64|arm64)
+      printf '%s\n' "arm64"
+      ;;
+    armv7l|armv7*)
+      printf '%s\n' "armhf"
+      ;;
+    i386|i486|i586|i686)
+      printf '%s\n' "i386"
+      ;;
+    *)
+      printf '%s\n' "$machine"
+      ;;
+  esac
+}
 
 resolve_flutter() {
   if [ -n "${FLUTTER_BIN:-}" ] && [ -x "$FLUTTER_BIN" ]; then
@@ -41,6 +64,29 @@ get_app_version() {
   grep '^version:' "$REPO_ROOT/pubspec.yaml" | sed 's/version:[[:space:]]*//' | cut -d'+' -f1 | tr -d '[:space:]'
 }
 
+resolve_build_dir() {
+  local candidates=(
+    "$REPO_ROOT/build/linux/x64/release/bundle"
+    "$REPO_ROOT/build/linux/arm64/release/bundle"
+    "$REPO_ROOT/build/linux/release/bundle"
+  )
+
+  local candidate
+  for candidate in "${candidates[@]}"; do
+    if [ -d "$candidate" ] && [ -f "$candidate/moonfin" ]; then
+      printf '%s\n' "$candidate"
+      return 0
+    fi
+  done
+
+  echo "Error: Linux bundle directory not found after Flutter build." >&2
+  echo "Checked:" >&2
+  for candidate in "${candidates[@]}"; do
+    echo "  - $candidate" >&2
+  done
+  exit 1
+}
+
 create_desktop_file() {
   local dest="$1"
   cat > "$dest/${APP_ID}.desktop" << EOF
@@ -53,6 +99,44 @@ Categories=AudioVideo;Video;
 Comment=Jellyfin & Emby media client
 Terminal=false
 EOF
+}
+
+create_metainfo_file() {
+  local dest="$1"
+  local version="$2"
+
+  cat > "$dest/${APP_ID}.metainfo.xml" << EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>${APP_ID}</id>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0</project_license>
+  <name>Moonfin</name>
+  <developer_name>Moonfin Team</developer_name>
+  <summary>Jellyfin &amp; Emby media client</summary>
+  <description>
+    <p>Moonfin is a media client for Jellyfin and Emby servers, available on mobile, TV, and desktop platforms.</p>
+  </description>
+  <url type="homepage">https://moonfin.app/</url>
+  <launchable type="desktop-id">${APP_ID}.desktop</launchable>
+  <releases>
+    <release version="${version}" date="$(date '+%Y-%m-%d')"/>
+  </releases>
+  <content_rating type="oars-1.1"/>
+</component>
+EOF
+}
+
+ensure_flatpak_runtime() {
+  local runtime="org.freedesktop.Platform//23.08"
+  local sdk="org.freedesktop.Sdk//23.08"
+
+  if flatpak info --user "$runtime" >/dev/null 2>&1 && flatpak info --user "$sdk" >/dev/null 2>&1; then
+    return 0
+  fi
+
+  flatpak remote-add --user --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo 2>/dev/null || true
+  flatpak install --user --noninteractive flathub "$runtime" "$sdk" || true
 }
 
 copy_icon() {
@@ -96,6 +180,7 @@ EOF
   chmod +x "$appimage_dir/AppRun"
 
   create_desktop_file "$appimage_dir"
+  copy_icon "$appimage_dir"
   mkdir -p "$appimage_dir/usr/share/pixmaps"
   copy_icon "$appimage_dir/usr/share/pixmaps"
 
@@ -153,24 +238,32 @@ build_deb() {
   local version="$(get_app_version)"
   local deb_name="${APP_NAME}_Linux_v${version}.deb"
   local pkg_root="$TEMP_DIR/deb/moonfin-${version}"
+  local deb_arch
+  deb_arch="$(get_deb_architecture)"
 
   rm -rf "$TEMP_DIR/deb"
   mkdir -p "$pkg_root"/{usr/bin,usr/lib/moonfin,usr/share/applications,usr/share/pixmaps,usr/share/doc/moonfin,DEBIAN}
 
-  cp "$BUILD_DIR/moonfin" "$pkg_root/usr/bin/"
-  chmod +x "$pkg_root/usr/bin/moonfin"
+  cp -r "$BUILD_DIR"/* "$pkg_root/usr/lib/moonfin/"
 
-  if [ -d "$BUILD_DIR/lib" ]; then
-    cp -r "$BUILD_DIR/lib"/* "$pkg_root/usr/lib/moonfin/"
-  fi
+  cat > "$pkg_root/usr/bin/moonfin" << 'EOF'
+#!/bin/sh
+APPDIR="/usr/lib/moonfin"
+export LD_LIBRARY_PATH="$APPDIR/lib${LD_LIBRARY_PATH:+:$LD_LIBRARY_PATH}"
+exec "$APPDIR/moonfin" "$@"
+EOF
+  chmod +x "$pkg_root/usr/bin/moonfin"
 
   create_desktop_file "$pkg_root/usr/share/applications"
   copy_icon "$pkg_root/usr/share/pixmaps"
 
+  mkdir -p "$pkg_root/usr/share/metainfo"
+  create_metainfo_file "$pkg_root/usr/share/metainfo" "$version"
+
   cat > "$pkg_root/DEBIAN/control" << EOF
 Package: moonfin
 Version: ${version}
-Architecture: amd64
+Architecture: ${deb_arch}
 Maintainer: Moonfin Team <support@moonfin.dev>
 Installed-Size: $(du -sk "$pkg_root/usr" | cut -f1)
 Depends: libgtk-3-0, libglib2.0-0
@@ -221,6 +314,8 @@ build_rpm() {
 
   rm -rf "$rpm_dir"
   mkdir -p "$rpm_dir"/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
+  create_desktop_file "$rpm_dir"
+  create_metainfo_file "$rpm_dir" "$version"
 
   cat > "$spec_file" << EOF
 Name:           moonfin
@@ -238,19 +333,20 @@ mkdir -p %{buildroot}/usr/bin
 mkdir -p %{buildroot}/usr/lib/moonfin
 mkdir -p %{buildroot}/usr/share/applications
 mkdir -p %{buildroot}/usr/share/pixmaps
+mkdir -p %{buildroot}/usr/share/metainfo
 
 cp -r ${BUILD_DIR}/* %{buildroot}/usr/lib/moonfin/
-ln -s /usr/lib/moonfin/moonfin %{buildroot}/usr/bin/moonfin
 
-cat > %{buildroot}/usr/share/applications/${APP_ID}.desktop << 'EOFDESKTOP'
-[Desktop Entry]
-Type=Application
-Name=Moonfin
-Exec=moonfin
-Icon=${APP_ID}
-Categories=AudioVideo;Video;
-Comment=Jellyfin & Emby media client
-EOFDESKTOP
+cat > %{buildroot}/usr/bin/moonfin << 'EOFRUNNER'
+#!/bin/sh
+APPDIR="/usr/lib/moonfin"
+export LD_LIBRARY_PATH="\$APPDIR/lib\${LD_LIBRARY_PATH:+:\$LD_LIBRARY_PATH}"
+exec "\$APPDIR/moonfin" "\$@"
+EOFRUNNER
+chmod +x %{buildroot}/usr/bin/moonfin
+
+cp "$rpm_dir/${APP_ID}.desktop" %{buildroot}/usr/share/applications/${APP_ID}.desktop
+cp "$rpm_dir/${APP_ID}.metainfo.xml" %{buildroot}/usr/share/metainfo/${APP_ID}.metainfo.xml
 
 if [ -f "$APP_ICON" ]; then
   cp "$APP_ICON" %{buildroot}/usr/share/pixmaps/${APP_ID}.png
@@ -258,18 +354,19 @@ fi
 
 %files
 /usr/bin/moonfin
-/usr/lib/moonfin/
+%dir /usr/lib/moonfin
+/usr/lib/moonfin/*
 /usr/share/applications/${APP_ID}.desktop
 /usr/share/pixmaps/${APP_ID}.png
+/usr/share/metainfo/${APP_ID}.metainfo.xml
 
 %changelog
-* Mon Mar 25 2026 Moonfin Team
+* $(date '+%a %b %d %Y') Moonfin Team <support@moonfin.dev>
 - Release ${version}
 EOF
 
   cd "$rpm_dir"
-  rpmbuild --define "_topdir $rpm_dir" -bb "$spec_file" 2>/dev/null || true
-
+  rpmbuild --define "_topdir $rpm_dir" -bb "$spec_file" || true
   local rpm_file=$(find "$rpm_dir/RPMS" -name "*.rpm" 2>/dev/null | head -1)
   if [ -n "$rpm_file" ]; then
     cp "$rpm_file" "$REPO_ROOT/$rpm_name"
@@ -293,6 +390,7 @@ build_snap() {
 
   cat > "$snap_dir/snapcraft.yaml" << EOF
 name: moonfin
+title: Moonfin
 version: '${version}'
 summary: Jellyfin & Emby media client
 description: |
@@ -329,8 +427,20 @@ parts:
       - libx11-6
 EOF
 
-  echo "Skipping Snap build (requires snapcraft setup)"
-  echo "  To build snap: cd $snap_dir && snapcraft"
+  cp -r "$BUILD_DIR"/* "$snap_dir/"
+  [ -f "$APP_ICON" ] && cp "$APP_ICON" "$snap_dir/${APP_ID}.png"
+
+  cd "$snap_dir"
+  snapcraft --destructive-mode || true
+
+  local snap_file
+  snap_file=$(find "$snap_dir" -maxdepth 1 -name "*.snap" 2>/dev/null | head -1)
+  if [ -n "$snap_file" ]; then
+    mv "$snap_file" "$REPO_ROOT/${APP_NAME}_Linux_v${version}.snap"
+    echo "✓ Created: $REPO_ROOT/${APP_NAME}_Linux_v${version}.snap"
+  else
+    echo "Snap build did not produce a .snap file"
+  fi
 }
 
 build_flatpak() {
@@ -347,6 +457,17 @@ build_flatpak() {
   rm -rf "$flatpak_dir"
   mkdir -p "$flatpak_dir"
 
+  local flatpak_build_dir="$TEMP_DIR/flatpak-build"
+  local flatpak_repo_dir="$TEMP_DIR/flatpak-repo"
+  local flatpak_name="${APP_NAME}_Linux_v${version}.flatpak"
+  local flatpak_src="$flatpak_dir/src"
+
+  mkdir -p "$flatpak_src"
+  cp -r "$BUILD_DIR"/* "$flatpak_src/"
+  [ -f "$APP_ICON" ] && cp "$APP_ICON" "$flatpak_src/${APP_ID}.png"
+  create_desktop_file "$flatpak_src"
+  create_metainfo_file "$flatpak_src" "$version"
+
   cat > "$flatpak_dir/${APP_ID}.yml" << EOF
 app-id: ${APP_ID}
 runtime: org.freedesktop.Platform
@@ -355,20 +476,46 @@ sdk: org.freedesktop.Sdk
 
 command: moonfin
 
+finish-args:
+  - --share=network
+  - --socket=fallback-x11
+  - --socket=wayland
+  - --device=dri
+  - --socket=pulseaudio
+  - --filesystem=home
+
 modules:
   - name: moonfin
     buildsystem: simple
     build-commands:
-      - mkdir -p /app/bin /app/lib
-      - cp -r ${BUILD_DIR}/moonfin /app/bin/
-      - cp -r ${BUILD_DIR}/lib/* /app/lib/ || true
+      - mkdir -p /app/bin /app/lib /app/share/pixmaps /app/share/applications /app/share/metainfo
+      - cp moonfin /app/bin/
+      - chmod +x /app/bin/moonfin
+      - cp -r lib/* /app/lib/ || true
+      - '[ -f ${APP_ID}.png ] && cp ${APP_ID}.png /app/share/pixmaps/ || true'
+      - cp ${APP_ID}.desktop /app/share/applications/
+      - cp ${APP_ID}.metainfo.xml /app/share/metainfo/
     sources:
       - type: dir
-        path: .
+        path: src
 EOF
 
-  echo "Skipping Flatpak build (requires host Flatpak setup)"
-  echo "  To build flatpak: flatpak-builder --force-clean $flatpak_dir ${APP_ID}.yml"
+  mkdir -p "$flatpak_repo_dir"
+  ostree init --repo="$flatpak_repo_dir" --mode=archive-z2 2>/dev/null || true
+  ostree --repo="$flatpak_repo_dir" config set 'core.min-free-space-percent' 0 2>/dev/null || true
+
+  ensure_flatpak_runtime
+
+  flatpak-builder --force-clean \
+    --repo="$flatpak_repo_dir" \
+    "$flatpak_build_dir" \
+    "$flatpak_dir/${APP_ID}.yml" || true
+
+  if flatpak build-bundle "$flatpak_repo_dir" "$REPO_ROOT/$flatpak_name" "${APP_ID}"; then
+    echo "✓ Created: $REPO_ROOT/$flatpak_name"
+  else
+    echo "Flatpak build did not produce a bundle"
+  fi
 }
 
 main() {
@@ -383,6 +530,7 @@ main() {
   echo ""
 
   build_flutter_binary
+  BUILD_DIR="$(resolve_build_dir)"
   rm -rf "$TEMP_DIR"
 
   case "$formats" in
@@ -435,470 +583,6 @@ USAGE
   esac
 
   rm -rf "$TEMP_DIR"
-
-  echo ""
-  echo "======================================"
-  echo "Build complete!"
-  echo "Artifacts: $REPO_ROOT"
-  ls -lh "$REPO_ROOT"/Moonfin_* 2>/dev/null || echo "(no artifacts built)"
-  echo "======================================"
-}
-
-main "$@"
-
-# Create AppImage
-build_appimage() {
-  echo "=== Building AppImage ==="
-  if ! require_tool appimagetool; then
-    echo "Skipping AppImage: appimagetool not found"
-    echo "  Install: https://github.com/AppImage/AppImageKit/releases"
-    return 1
-  fi
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local appimage_dir="$OUTPUT_DIR/appimage-build"
-  local version="$(get_app_version)"
-  local appimage_name="${APP_NAME}_Linux_v${version}.AppImage"
-
-  mkdir -p "$appimage_dir"
-
-  # Copy bundle files
-  cp -r "$bundle_dir"/* "$appimage_dir/"
-
-  # Create AppRun script
-  cat > "$appimage_dir/AppRun" << 'EOF'
-#!/bin/bash
-APPDIR="$(cd "$(dirname "$0")" && pwd)"
-export LD_LIBRARY_PATH="$APPDIR/lib:$LD_LIBRARY_PATH"
-exec "$APPDIR/moonfin" "$@"
-EOF
-  chmod +x "$appimage_dir/AppRun"
-
-  # Create .desktop file
-  cat > "$appimage_dir/${APP_ID}.desktop" << EOF
-[Desktop Entry]
-Type=Application
-Name=Moonfin
-Exec=moonfin
-Icon=${APP_ID}
-Categories=AudioVideo;Video;
-Comment=Jellyfin & Emby media client
-EOF
-
-  # Copy icon if available
-  if [ -f "$APP_ICON" ]; then
-    mkdir -p "$appimage_dir/usr/share/pixmaps"
-    cp "$APP_ICON" "$appimage_dir/usr/share/pixmaps/${APP_ID}.png"
-    cp "$APP_ICON" "$appimage_dir/.icon"
-  fi
-
-  # Create AppImage
-  cd "$appimage_dir/.."
-  appimagetool "$appimage_dir" "$appimage_name" || true
-  
-  if [ -f "$appimage_name" ]; then
-    mv "$appimage_name" "$REPO_ROOT/$appimage_name"
-    echo "✓ Created: $REPO_ROOT/$appimage_name"
-  fi
-
-  cd "$REPO_ROOT"
-}
-
-# Create tarball
-build_tarball() {
-  echo "=== Building Tarball ==="
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local version="$(get_app_version)"
-  local tarball_name="${APP_NAME}_Linux_v${version}.tar.gz"
-
-  mkdir -p "$OUTPUT_DIR/tarball"
-
-  # Create directory structure
-  local tar_dir="$OUTPUT_DIR/tarball/moonfin-${version}"
-  mkdir -p "$tar_dir"
-
-  # Copy binary and lib
-  cp -r "$bundle_dir"/* "$tar_dir/"
-
-  # Create README
-  cat > "$tar_dir/README.txt" << EOF
-Moonfin ${version}
-Jellyfin & Emby media client for Linux
-
-Installation:
-  1. Extract this archive
-  2. Run ./moonfin
-
-Dependencies:
-  - GTK 3.0+
-  - GLib 2.0+
-  - libflutter_linux_gtk (bundled)
-
-Requirements:
-  - X11 or Wayland display server
-  - Network access to Jellyfin/Emby server
-EOF
-
-  # Create tarball
-  cd "$OUTPUT_DIR/tarball"
-  tar -czf "$tarball_name" "moonfin-${version}"
-  mv "$tarball_name" "$REPO_ROOT/"
-  echo "✓ Created: $REPO_ROOT/$tarball_name"
-  rm -rf "moonfin-${version}"
-
-  cd "$REPO_ROOT"
-}
-
-# Create .deb package
-build_deb() {
-  echo "=== Building Debian Package (.deb) ==="
-  if ! require_tool dpkg-deb; then
-    echo "Skipping .deb: dpkg tools not found"
-    return 1
-  fi
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local version="$(get_app_version)"
-  local deb_name="${APP_NAME}_Linux_v${version}.deb"
-  local deb_dir="$OUTPUT_DIR/deb-build"
-  local pkg_root="$deb_dir/moonfin-${version}"
-
-  mkdir -p "$pkg_root"
-
-  # Create directory structure
-  mkdir -p "$pkg_root/usr/bin"
-  mkdir -p "$pkg_root/usr/lib/moonfin"
-  mkdir -p "$pkg_root/usr/share/applications"
-  mkdir -p "$pkg_root/usr/share/pixmaps"
-  mkdir -p "$pkg_root/usr/share/doc/moonfin"
-  mkdir -p "$pkg_root/DEBIAN"
-
-  # Copy binary
-  cp "$bundle_dir/moonfin" "$pkg_root/usr/bin/"
-  chmod +x "$pkg_root/usr/bin/moonfin"
-
-  # Copy libraries
-  if [ -d "$bundle_dir/lib" ]; then
-    cp -r "$bundle_dir/lib"/* "$pkg_root/usr/lib/moonfin/"
-  fi
-
-  # Create .desktop file
-  cat > "$pkg_root/usr/share/applications/${APP_ID}.desktop" << EOF
-[Desktop Entry]
-Type=Application
-Name=Moonfin
-Exec=moonfin
-Icon=${APP_ID}
-Categories=AudioVideo;Video;
-Comment=Jellyfin & Emby media client
-Terminal=false
-EOF
-
-  # Copy icon
-  if [ -f "$APP_ICON" ]; then
-    cp "$APP_ICON" "$pkg_root/usr/share/pixmaps/${APP_ID}.png"
-  fi
-
-  # Create control file
-  cat > "$pkg_root/DEBIAN/control" << EOF
-Package: moonfin
-Version: ${version}
-Architecture: amd64
-Maintainer: Moonfin Team <support@moonfin.dev>
-Installed-Size: $(du -sk "$pkg_root/usr" | cut -f1)
-Depends: libgtk-3-0, libglib2.0-0
-Description: Jellyfin & Emby media client
- Moonfin is a media client for Jellyfin and Emby servers,
- available on mobile, TV, and desktop platforms.
- .
- Features:
-  - Browse and stream media
-  - Offline downloads
-  - Casting support
-  - DLNA playback
-Homepage: https://moonfin.app/
-License: GPL-3.0
-EOF
-
-  # Create changelog
-  cat > "$pkg_root/usr/share/doc/moonfin/changelog.Debian.gz" << EOF
-moonfin (${version}) unstable; urgency=low
-
-  * See https://github.com/jmshrv/Moonfin/releases for details
-
-EOF
-
-  gzip "$pkg_root/usr/share/doc/moonfin/changelog.Debian" 2>/dev/null || true
-
-  # Create copyright
-  cat > "$pkg_root/usr/share/doc/moonfin/copyright" << EOF
-Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
-Upstream-Name: Moonfin
-Upstream-Contact: https://github.com/jmshrv/Moonfin
-Source: https://github.com/jmshrv/Moonfin
-
-Files: *
-Copyright: 2024-2025 Moonfin Team
-License: GPL-3.0
-EOF
-
-  # Build .deb
-  cd "$deb_dir"
-  dpkg-deb --build "moonfin-${version}" "$deb_name" || true
-
-  if [ -f "$deb_name" ]; then
-    mv "$deb_name" "$REPO_ROOT/"
-    echo "✓ Created: $REPO_ROOT/$deb_name"
-  fi
-
-  cd "$REPO_ROOT"
-}
-
-# Create RPM package
-build_rpm() {
-  echo "=== Building RPM Package (.rpm) ==="
-  if ! require_tool rpmbuild; then
-    echo "Skipping .rpm: rpmbuild not found"
-    return 1
-  fi
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local version="$(get_app_version)"
-  local rpm_name="${APP_NAME}_Linux_v${version}.rpm"
-  local rpm_dir="$OUTPUT_DIR/rpm-build"
-  local spec_file="$rpm_dir/moonfin.spec"
-
-  mkdir -p "$rpm_dir"/{SPECS,SOURCES,BUILD,RPMS,SRPMS}
-
-  # Create spec file
-  cat > "$spec_file" << EOF
-Name:           moonfin
-Version:        ${version}
-Release:        1
-Summary:        Jellyfin & Emby media client
-License:        GPL-3.0
-
-%description
-Moonfin is a media client for Jellyfin and Emby servers,
-available on mobile, TV, and desktop platforms.
-
-%install
-mkdir -p %{buildroot}/usr/bin
-mkdir -p %{buildroot}/usr/lib/moonfin
-mkdir -p %{buildroot}/usr/share/applications
-mkdir -p %{buildroot}/usr/share/pixmaps
-
-cp -r ${bundle_dir}/* %{buildroot}/usr/lib/moonfin/
-ln -s /usr/lib/moonfin/moonfin %{buildroot}/usr/bin/moonfin
-
-cat > %{buildroot}/usr/share/applications/${APP_ID}.desktop << 'EOFDESKTOP'
-[Desktop Entry]
-Type=Application
-Name=Moonfin
-Exec=moonfin
-Icon=${APP_ID}
-Categories=AudioVideo;Video;
-Comment=Jellyfin & Emby media client
-EOFDESKTOP
-
-if [ -f "$APP_ICON" ]; then
-  cp "$APP_ICON" %{buildroot}/usr/share/pixmaps/${APP_ID}.png
-fi
-
-%files
-/usr/bin/moonfin
-/usr/lib/moonfin/
-/usr/share/applications/${APP_ID}.desktop
-/usr/share/pixmaps/${APP_ID}.png
-
-%changelog
-* Mon Mar 24 2026 Moonfin Team
-- Release ${version}
-EOF
-
-  # Build RPM
-  cd "$rpm_dir"
-  rpmbuild --define "_topdir $rpm_dir" -bb "$spec_file" 2>/dev/null || true
-
-  # Find and move RPM
-  local rpm_file=$(find "$rpm_dir/RPMS" -name "*.rpm" 2>/dev/null | head -1)
-  if [ -n "$rpm_file" ]; then
-    cp "$rpm_file" "$REPO_ROOT/$rpm_name"
-    echo "✓ Created: $REPO_ROOT/$rpm_name"
-  fi
-
-  cd "$REPO_ROOT"
-}
-
-# Create Snap package
-build_snap() {
-  echo "=== Building Snap Package ==="
-  if ! require_tool snapcraft; then
-    echo "Skipping Snap: snapcraft not found"
-    echo "  Install: sudo snap install snapcraft --classic"
-    return 1
-  fi
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local snap_dir="$OUTPUT_DIR/snap-build"
-  local version="$(get_app_version)"
-
-  mkdir -p "$snap_dir"
-
-  # Create snapcraft.yaml
-  cat > "$snap_dir/snapcraft.yaml" << EOF
-name: moonfin
-version: '${version}'
-summary: Jellyfin & Emby media client
-description: |
-  Moonfin is a media client for Jellyfin and Emby servers.
-  Stream movies, TV shows, music, and photos from your server.
-
-grade: stable
-confinement: strict
-base: core22
-
-apps:
-  moonfin:
-    command: moonfin
-    plugs:
-      - home
-      - network
-      - network-bind
-      - opengl
-      - pulseaudio
-    environment:
-      LD_LIBRARY_PATH: \$SNAP/lib/x86_64-linux-gnu
-
-parts:
-  moonfin:
-    plugin: dump
-    source: .
-    override-build: |
-      mkdir -p \$SNAPCRAFT_PART_INSTALL/bin
-      mkdir -p \$SNAPCRAFT_PART_INSTALL/lib
-      cp -r ${bundle_dir}/* \$SNAPCRAFT_PART_INSTALL/
-    stage-packages:
-      - libgtk-3-0
-      - libglib2.0-0
-      - libx11-6
-EOF
-
-  echo "Skipping Snap build (requires snapcraft setup)"
-  echo "  To build snap: cd $snap_dir && snapcraft"
-}
-
-# Create Flatpak package
-build_flatpak() {
-  echo "=== Building Flatpak Package ==="
-  if ! require_tool flatpak-builder; then
-    echo "Skipping Flatpak: flatpak-builder not found"
-    echo "  Install: sudo apt install flatpak-builder"
-    return 1
-  fi
-
-  local bundle_dir="$REPO_ROOT/build/linux/release/bundle"
-  local flatpak_dir="$OUTPUT_DIR/flatpak-build"
-  local version="$(get_app_version)"
-
-  mkdir -p "$flatpak_dir"
-
-  # Create Flatpak manifest
-  cat > "$flatpak_dir/${APP_ID}.yml" << EOF
-app-id: ${APP_ID}
-runtime: org.freedesktop.Platform
-runtime-version: '23.08'
-sdk: org.freedesktop.Sdk
-
-command: moonfin
-
-modules:
-  - name: moonfin
-    buildsystem: simple
-    build-commands:
-      - mkdir -p /app/bin /app/lib
-      - cp -r ${bundle_dir}/moonfin /app/bin/
-      - cp -r ${bundle_dir}/lib/* /app/lib/ || true
-    sources:
-      - type: dir
-        path: .
-EOF
-
-  echo "Skipping Flatpak build (requires host Flatpak setup)"
-  echo "  To build flatpak: flatpak-builder --force-clean $flatpak_dir ${APP_ID}.yml"
-}
-
-# Main logic
-main() {
-  local formats="${1:-all}"
-  # Convert to lowercase for case-insensitive comparison
-  formats="$(printf '%s\n' "$formats" | tr '[:upper:]' '[:lower:]')"
-  local version="$(get_app_version)"
-
-  echo "======================================"
-  echo "Moonfin Linux Package Builder"
-  echo "Version: ${version}"
-  echo "======================================"
-  echo ""
-
-  FLUTTER_BIN="$(resolve_flutter)"
-
-  # Always build Flutter binary first
-  build_flutter_binary
-
-  # Create output directory
-  mkdir -p "$OUTPUT_DIR"
-
-  # Build requested formats
-  case "$formats" in
-    all)
-      build_tarball || true
-      build_appimage || true
-      build_deb || true
-      build_rpm || true
-      build_snap || true
-      build_flatpak || true
-      ;;
-    tarball)
-      build_tarball
-      ;;
-    appimage)
-      build_appimage
-      ;;
-    deb)
-      build_deb
-      ;;
-    rpm)
-      build_rpm
-      ;;
-    snap)
-      build_snap
-      ;;
-    flatpak)
-      build_flatpak
-      ;;
-    *)
-      cat << USAGE
-Usage: $0 [FORMAT]
-
-Available formats:
-  all          Build all package formats (default)
-  tarball      Create tarball (.tar.gz)
-  appimage     Create AppImage (requires appimagetool)
-  deb          Create Debian package (requires dpkg-deb)
-  rpm          Create RPM package (requires rpmbuild)
-  snap         Create Snap package (requires snapcraft)
-  flatpak      Create Flatpak package (requires flatpak-builder)
-
-Examples:
-  $0                 # Build all formats
-  $0 tarball         # Build only tarball
-  $0 appimage        # Build only AppImage
-USAGE
-      exit 1
-      ;;
-  esac
 
   echo ""
   echo "======================================"
