@@ -1,4 +1,5 @@
 import 'package:flutter/foundation.dart';
+import 'package:dio/dio.dart';
 import 'package:server_core/server_core.dart' hide ImageType;
 
 import '../../preference/preference_constants.dart';
@@ -19,6 +20,8 @@ class LibraryBrowseViewModel extends ChangeNotifier {
   final List<String>? includeItemTypes;
 
   static const _pageSize = 100;
+  static const _browseFields =
+      'PrimaryImageAspectRatio,SortName,Type,IsFolder,ChildCount,UserData,CommunityRating,OfficialRating,RunTimeTicks,ProductionYear,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentThumbItemId,ParentThumbImageTag,SeriesId,SeriesPrimaryImageTag,CriticRating';
 
   LibraryBrowseState _state = LibraryBrowseState.loading;
   LibraryBrowseState get state => _state;
@@ -29,7 +32,10 @@ class LibraryBrowseViewModel extends ChangeNotifier {
   int _totalCount = 0;
   int get totalCount => _totalCount;
 
-  bool get hasMore => _items.length < _totalCount;
+  bool _totalCountKnown = true;
+  bool _hasMoreFromPageSize = false;
+
+  bool get hasMore => _totalCountKnown ? _items.length < _totalCount : _hasMoreFromPageSize;
 
   String _libraryName = '';
   String get libraryName => _libraryName;
@@ -82,6 +88,8 @@ class LibraryBrowseViewModel extends ChangeNotifier {
   Map<String, double> _focusedRatings = const {};
   Map<String, double> get focusedRatings => _focusedRatings;
 
+  final Map<String, String?> _tmdbIdByItemId = {};
+
   ImageApi get imageApi => _client.imageApi;
 
   Future<List<AggregatedItem>> _filterLibraryItems(
@@ -105,7 +113,21 @@ class LibraryBrowseViewModel extends ChangeNotifier {
 
   Future<void> _loadFocusedRatings(AggregatedItem item) async {
     if (!_prefs.get(UserPreferences.enableAdditionalRatings)) return;
-    final tmdbId = item.tmdbId;
+    var tmdbId = item.tmdbId;
+    if (tmdbId == null) {
+      if (_tmdbIdByItemId.containsKey(item.id)) {
+        tmdbId = _tmdbIdByItemId[item.id];
+      } else {
+        try {
+          final details = await _client.itemsApi.getItem(item.id);
+          tmdbId = (details['ProviderIds'] as Map?)?['Tmdb'] as String?;
+        } catch (_) {
+          tmdbId = null;
+        }
+        _tmdbIdByItemId[item.id] = tmdbId;
+      }
+    }
+
     if (tmdbId == null) return;
     final mediaType = item.type;
     if (mediaType == null) return;
@@ -155,6 +177,9 @@ class LibraryBrowseViewModel extends ChangeNotifier {
     _state = LibraryBrowseState.loading;
     _items = const [];
     _totalCount = 0;
+    _totalCountKnown = true;
+    _hasMoreFromPageSize = false;
+    _tmdbIdByItemId.clear();
     notifyListeners();
 
     try {
@@ -309,7 +334,7 @@ class LibraryBrowseViewModel extends ChangeNotifier {
         isFavorite: _favoriteFilter ? true : null,
       );
     } else {
-      response = await _client.itemsApi.getItems(
+      response = await _fetchItemsWithFallback(
         parentId: _effectiveParentId,
         genreIds: genreId != null ? [genreId!] : null,
         includeItemTypes: includeTypes,
@@ -320,10 +345,8 @@ class LibraryBrowseViewModel extends ChangeNotifier {
             ? 'Ascending'
             : 'Descending',
         startIndex: startIndex,
-        limit: _pageSize,
         recursive: recursive,
-        fields:
-            'PrimaryImageAspectRatio,BasicSyncInfo,Overview,Genres,CommunityRating,OfficialRating,RunTimeTicks,ProductionYear,Status,ImageTags,BackdropImageTags,ParentBackdropItemId,ParentBackdropImageTags,ParentThumbItemId,ParentThumbImageTag,SeriesId,SeriesPrimaryImageTag,CriticRating,ProviderIds',
+        fields: _browseFields,
         filters: filters.isEmpty ? null : filters,
         seriesStatus: seriesStatus.isEmpty ? null : seriesStatus,
         nameStartsWith: _letterFilter.isEmpty ? null : _letterFilter,
@@ -332,7 +355,16 @@ class LibraryBrowseViewModel extends ChangeNotifier {
     }
 
     final rawItems = (response['Items'] as List?) ?? [];
-    _totalCount = response['TotalRecordCount'] as int? ?? rawItems.length;
+    final totalFromServer = response['TotalRecordCount'] as int?;
+    _totalCountKnown = totalFromServer != null;
+    if (_totalCountKnown) {
+      _totalCount = totalFromServer!;
+      _hasMoreFromPageSize = _items.length + rawItems.length < _totalCount;
+    } else {
+      _hasMoreFromPageSize = rawItems.length == _pageSize;
+      final loadedCount = startIndex + rawItems.length;
+      _totalCount = loadedCount + (_hasMoreFromPageSize ? 1 : 0);
+    }
 
     final mapped = rawItems
         .cast<Map<String, dynamic>>()
@@ -351,6 +383,72 @@ class LibraryBrowseViewModel extends ChangeNotifier {
       _items = filtered;
     } else {
       _items = [..._items, ...filtered];
+    }
+  }
+
+  Future<Map<String, dynamic>> _fetchItemsWithFallback({
+    String? parentId,
+    List<String>? genreIds,
+    List<String>? includeItemTypes,
+    List<String>? excludeItemTypes,
+    bool? collapseBoxSetItems,
+    required String sortBy,
+    required String sortOrder,
+    required int startIndex,
+    required bool recursive,
+    required String fields,
+    List<String>? filters,
+    List<String>? seriesStatus,
+    String? nameStartsWith,
+    bool? isFavorite,
+  }) async {
+    try {
+      return await _client.itemsApi.getItems(
+        parentId: parentId,
+        genreIds: genreIds,
+        includeItemTypes: includeItemTypes,
+        excludeItemTypes: excludeItemTypes,
+        collapseBoxSetItems: collapseBoxSetItems,
+        sortBy: sortBy,
+        sortOrder: sortOrder,
+        startIndex: startIndex,
+        limit: _pageSize,
+        recursive: recursive,
+        fields: fields,
+        filters: filters,
+        seriesStatus: seriesStatus,
+        nameStartsWith: nameStartsWith,
+        isFavorite: isFavorite,
+      );
+    } on DioException catch (e) {
+      final statusCode = e.response?.statusCode ?? 0;
+      final isServerError = statusCode >= 500;
+      if (!isServerError) {
+        rethrow;
+      }
+
+      final fallbackSort = sortBy.toLowerCase().contains('isfolder')
+          ? 'SortName'
+          : sortBy;
+
+      return _client.itemsApi.getItems(
+        parentId: parentId,
+        genreIds: genreIds,
+        includeItemTypes: includeItemTypes,
+        excludeItemTypes: excludeItemTypes,
+        collapseBoxSetItems: collapseBoxSetItems,
+        sortBy: fallbackSort,
+        sortOrder: sortOrder,
+        startIndex: startIndex,
+        limit: _pageSize,
+        recursive: recursive,
+        fields: fields,
+        filters: filters,
+        seriesStatus: seriesStatus,
+        nameStartsWith: nameStartsWith,
+        isFavorite: isFavorite,
+        enableTotalRecordCount: false,
+      );
     }
   }
 
