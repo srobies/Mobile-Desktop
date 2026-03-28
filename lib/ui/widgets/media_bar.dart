@@ -428,7 +428,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
     return switch (state) {
       MediaBarLoading() => SizedBox(height: widget.height),
       MediaBarDisabled() => const SizedBox.shrink(),
-      MediaBarError() => const SizedBox.shrink(),
+      MediaBarError() => SizedBox(height: widget.height),
       MediaBarReady(items: final items) => items.isEmpty
           ? const SizedBox.shrink()
           : _buildSlideshow(context, items),
@@ -441,6 +441,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
     final currentItem = items.elementAtOrNull(_currentIndex);
     
     final isMobile = PlatformDetection.useMobileUi;
+    final isTablet = isMobile && MediaQuery.of(context).size.shortestSide >= 600;
     final navbarAtTop = isMobile && 
         (GetIt.instance<UserPreferences>().get(UserPreferences.navbarPosition) == NavbarPosition.top);
     final toolbarInset = navbarAtTop ? MediaQuery.of(context).padding.top + 60.0 : 0.0;
@@ -506,7 +507,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
                       overlayOpacity: overlayOpacity,
                     ),
                   ),
-                if (currentItem != null && currentItem.logoUrl != null && !PlatformDetection.useMobileUi)
+                if (currentItem != null && currentItem.logoUrl != null && (!isMobile || isTablet))
                   Positioned(
                     top: MediaQuery.of(context).padding.top + 56,
                     left: 16,
@@ -546,7 +547,7 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
                           crossAxisAlignment: CrossAxisAlignment.start,
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            if (PlatformDetection.useMobileUi && currentItem.logoUrl != null)
+                            if (isMobile && !isTablet && currentItem.logoUrl != null)
                               Padding(
                                 padding: const EdgeInsets.only(left: 16, bottom: 8),
                                 child: SizedBox(
