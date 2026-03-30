@@ -30,6 +30,21 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
     _sections = all.where((s) => s.type != HomeSectionType.mediaBar).toList();
   }
 
+  void _pushSyncSettings() {
+    final syncService = GetIt.instance<PluginSyncService>();
+    if (syncService.pluginAvailable) {
+      final client = GetIt.instance<MediaServerClient>();
+      syncService.pushSettings(client);
+    }
+  }
+
+  void _setMergeContinueWatchingNextUp(bool value, {bool pushSync = true}) {
+    _prefs.set(UserPreferences.mergeContinueWatchingNextUp, value);
+    if (pushSync) {
+      _pushSyncSettings();
+    }
+  }
+
   void _save() {
     for (var i = 0; i < _sections.length; i++) {
       _sections[i] = _sections[i].copyWith(order: i);
@@ -37,12 +52,7 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
     final toSave = [..._sections];
     if (_mediaBarConfig != null) toSave.add(_mediaBarConfig!);
     _prefs.setHomeSectionsConfig(toSave);
-
-    final syncService = GetIt.instance<PluginSyncService>();
-    if (syncService.pluginAvailable) {
-      final client = GetIt.instance<MediaServerClient>();
-      syncService.pushSettings(client);
-    }
+    _pushSyncSettings();
   }
 
   String _labelFor(HomeSectionType type) => switch (type) {
@@ -88,7 +98,13 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
             icon: const Icon(Icons.restore),
             tooltip: 'Reset to defaults',
             onPressed: () {
-              setState(() => _sections = HomeSectionConfig.defaults());
+              setState(() {
+                _sections = HomeSectionConfig.defaults();
+                _setMergeContinueWatchingNextUp(
+                  UserPreferences.mergeContinueWatchingNextUp.defaultValue,
+                  pushSync: false,
+                );
+              });
               _save();
             },
           ),
@@ -111,6 +127,19 @@ class _HomeSectionsScreenState extends State<HomeSectionsScreen> {
               subtitle: const Text('Configure image type for each enabled home row'),
               trailing: const Icon(Icons.chevron_right),
               onTap: () => context.push(Destinations.settingsHomeRowsImageType),
+            ),
+            const Divider(),
+            SwitchListTile(
+              secondary: const Icon(Icons.merge_type),
+              title: const Text('Merge Continue Watching and Next Up'),
+              subtitle: const Text(
+                'Combine both rows into a single home section',
+              ),
+              value: _prefs.get(UserPreferences.mergeContinueWatchingNextUp),
+              onChanged: (value) {
+                _setMergeContinueWatchingNextUp(value);
+                setState(() {});
+              },
             ),
             const Divider(),
           ],
