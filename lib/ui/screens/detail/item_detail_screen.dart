@@ -3553,6 +3553,9 @@ class _ChaptersRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final chapters = item.chapters;
     final isMobile = _isCompact(context);
+    final chapterCardWidth = isMobile ? 220.0 : 280.0;
+    final devicePixelRatio = MediaQuery.devicePixelRatioOf(context);
+    final chapterImageWidth = (chapterCardWidth * devicePixelRatio).ceil();
 
     return SizedBox(
       height: isMobile ? 180 : 210,
@@ -3574,15 +3577,16 @@ class _ChaptersRow extends StatelessWidget {
           final chapterImageUrl = imageApi.getChapterImageUrl(
             item.id,
             index: index,
-            maxWidth: isMobile ? 160 : 200,
+            maxWidth: chapterImageWidth,
             tag: imageTag,
           );
 
           return SizedBox(
-            width: isMobile ? 190 : 220,
+            width: chapterCardWidth,
             child: Column(
               children: [
-                Expanded(
+                AspectRatio(
+                  aspectRatio: 16 / 9,
                   child: InkWell(
                     borderRadius: BorderRadius.circular(10),
                     onTap: () => onPlayFromChapter(position),
@@ -3601,6 +3605,7 @@ class _ChaptersRow extends StatelessWidget {
                           child: Image.network(
                             chapterImageUrl,
                             fit: BoxFit.cover,
+                            filterQuality: FilterQuality.high,
                             errorBuilder:
                                 (_, __, ___) => Container(
                                   color: Colors.white.withValues(alpha: 0.08),
