@@ -156,6 +156,152 @@ Books and audiobooks download in their **original format** - no transcoding.
 
 ---
 
+# User Guide
+
+## Keyboard Shortcuts (Desktop)
+
+### App-Wide Shortcuts
+- **Escape** — Navigate back to the previous screen, or return to home if no history remains
+- **Enter/Return** — Activate the currently focused item
+- **F11** — Toggle fullscreen mode
+- **Ctrl+Q** — Quit the application
+
+### Player Shortcuts
+- **Space** — Play or pause playback
+- **Left Arrow** — Seek backward (default 10 seconds)
+- **Right Arrow** — Seek forward (default 30 seconds)
+- **Up Arrow** — Increase volume
+- **Down Arrow** — Decrease volume
+- **I** — Display stream information overlay (codec, bitrate, resolution, etc.)
+- **Escape** — Exit fullscreen (if in fullscreen); otherwise exit playback
+- **Enter/Space** — Show player controls if hidden; play/pause if controls are visible
+
+## Custom mpv.conf Configuration (Desktop)
+
+Moonfin allows power users to fine-tune playback behavior using a custom `mpv.conf` file. This enables advanced options like custom shaders, video scaling algorithms, tone mapping, and more.
+
+### Setup
+
+1. **Enable Custom mpv.conf** — Go to **Settings → Playback → Advanced mpv** and toggle **Enable Custom mpv.conf** to on.
+
+2. **Specify File Location** — Provide a path to your `mpv.conf` file:
+   - Click **Custom mpv.conf Path** to browse or enter the path manually.
+   - Moonfin will automatically check for `mpv.conf` in standard locations if not specified:
+     - Application support directory (recommended)
+     - Current working directory
+
+3. **Example File Locations**
+   - **Linux**: `~/.config/Moonfin/mpv.conf` or `/home/user/.local/share/Moonfin/mpv.conf`
+   - **macOS**: `~/Library/Application Support/Moonfin/mpv.conf`
+   - **Windows**: `C:\Users\YourName\AppData\Local\Moonfin\mpv.conf`
+
+### File Size Limit
+
+Configuration files must not exceed **256 KB**. Larger files are rejected.
+
+### Allowed and Blocked Options
+
+**Protected Options** — These affect core playback and are not configurable:
+- `aid`, `sid`, `vid` (audio/subtitle/video selection)
+- `sub-visibility`, `sub-ass`, `sub-ass-override` (subtitle rendering)
+- `sub-delay`, `audio-delay` (sync controls)
+- `network-timeout`, `sub-fonts-dir`, `sub-font` (core behavior)
+
+**Blocked Options** — These are blocked for security:
+- `script`, `scripts`, `script-opts`, `load-scripts` (script execution)
+- `include`, `profile`, `input-conf` (config file manipulation)
+- `input-ipc-server` (IPC access)
+
+**Allowed Options** (Basic & Advanced scaling, rendering):
+- Scaling: `scale`, `cscale`, `dscale`, `scale-*` options
+- Rendering: `sigmoid-upscaling`, `deband`, `deband-*`, `interpolation`, `tscale`, `video-sync`
+- Color & tone: `tone-mapping`, `tone-mapping-param`, `target-trc`, `brightness`, `contrast`, `saturation`, `gamma`, `sharpen`
+- Audio: `audio-channels`, `audio-normalize-downmix`
+- Effects: `deinterlace`, `keep-open`
+- GLSL shaders: `glsl-shader*` (loading custom shaders)
+
+### Unsafe Advanced Mode
+
+Enable **Unsafe Advanced mpv Options** to unlock lower-level settings:
+- `vo` (video output driver)
+- `gpu-context` (GPU backend selection)
+- `hwdec` (hardware decoding mode)
+- `vf`, `af` (custom video/audio filters)
+- `vd-lavc-*` (decoder options)
+- `demuxer-*` and `cache-*` (stream behavior)
+
+**Warning**: These options can break playback or cause instability if misconfigured.
+
+### Example Configuration
+
+```ini
+# Scaling and rendering
+scale=lanczos
+deband=yes
+tone-mapping=hdr
+
+# Video sync and interpolation
+video-sync=display-resample
+interpolation=yes
+
+# Shaders (if using unsafe advanced)
+# glsl-shader=/path/to/shader.glsl
+
+# Color adjustments
+gamma=1.1
+saturation=1.05
+```
+
+## Subtitle Downloads
+
+Download subtitles directly from the item details screen.
+
+1. Open any **Movie** or **Episode** details screen.
+2. In the details area, locate the **Subtitles** section.
+3. Tap or click the **download icon** next to available subtitles.
+4. Subtitles are saved in your downloads folder organized by media type and library structure.
+5. Downloaded subtitles are automatically available for offline playback.
+
+Synchronized subtitle timing is preserved during download. Use your preferred subtitle format (SRT, ASS, VTT, etc.) from your server's available sources.
+
+## Remote Device Control
+
+Control other Jellyfin devices on your network directly from Moonfin.
+
+### How to Use
+
+1. Tap or click the **user avatar** in the top toolbar.
+2. A dialog menu will appear with account and device options.
+3. Select **Remote Control** from the menu.
+4. A list of available Jellyfin devices on your server will appear, showing:
+   - Device name
+   - Current playback status (if applicable)
+   - Device type icon
+
+5. Select a device to send playback commands:
+   - **Play on Device** — Start playback on the remote device
+   - **Pause** — Pause playback on the remote device
+   - **Stop** — Stop playback on the remote device
+   - **Volume Control** — Adjust device volume if supported
+   - **Seek** — Control playback position
+
+### Supported Device Types
+
+- Desktop clients
+- Mobile apps
+- Web players
+- Smart TV apps
+- Media players (via Jellyfin server compatibility)
+
+### Requirements
+
+- Device must be registered with your Jellyfin server
+- Device must be actively online and connected to the network
+- You must have playback permission for the content
+- Both devices must be connected to the same Jellyfin server instance
+
+---
+
 # Screenshots
 
 ## Tablet and Desktop
