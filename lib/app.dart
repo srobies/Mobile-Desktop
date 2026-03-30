@@ -11,6 +11,7 @@ import 'package:window_manager/window_manager.dart';
 import 'data/services/app_update_service.dart';
 import 'di/providers.dart';
 import 'ui/navigation/app_router.dart';
+import 'ui/navigation/destinations.dart';
 import 'ui/theme/app_theme.dart';
 import 'ui/widgets/cast_mini_player.dart';
 import 'ui/widgets/mini_audio_player.dart';
@@ -81,9 +82,67 @@ class _GlobalShortcutScope extends StatefulWidget {
 
 class _GlobalShortcutScopeState extends State<_GlobalShortcutScope> {
   final FocusNode _focusNode = FocusNode(debugLabel: 'GlobalShortcutScope');
+  late final KeyEventCallback _hardwareKeyHandler;
+
+  @override
+  void initState() {
+    super.initState();
+    _hardwareKeyHandler = _onHardwareKeyEvent;
+    HardwareKeyboard.instance.addHandler(_hardwareKeyHandler);
+  }
+
+  bool _isPlayerRoute() {
+    final path = appRouter.routerDelegate.currentConfiguration.uri.path;
+    return path.startsWith('/player/') || path == '/live-tv/player';
+  }
+
+  bool _onHardwareKeyEvent(KeyEvent event) {
+    if (event is! KeyDownEvent) {
+      return false;
+    }
+
+    final key = event.logicalKey;
+    final keys = HardwareKeyboard.instance.logicalKeysPressed;
+    final ctrlPressed =
+        keys.contains(LogicalKeyboardKey.controlLeft) ||
+        keys.contains(LogicalKeyboardKey.controlRight);
+
+    if (key == LogicalKeyboardKey.escape) {
+      if (_isPlayerRoute()) {
+        return false;
+      }
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (!mounted) {
+          return;
+        }
+        if (appRouter.canPop()) {
+          appRouter.pop();
+        } else {
+          appRouter.go(Destinations.home);
+        }
+      });
+      return true;
+    }
+
+    if (PlatformDetection.isDesktop && key == LogicalKeyboardKey.f11) {
+      unawaited(() async {
+        final full = await windowManager.isFullScreen();
+        await windowManager.setFullScreen(!full);
+      }());
+      return true;
+    }
+
+    if (PlatformDetection.isDesktop && ctrlPressed && key == LogicalKeyboardKey.keyQ) {
+      unawaited(windowManager.close());
+      return true;
+    }
+
+    return false;
+  }
 
   @override
   void dispose() {
+    HardwareKeyboard.instance.removeHandler(_hardwareKeyHandler);
     _focusNode.dispose();
     super.dispose();
   }
@@ -94,29 +153,6 @@ class _GlobalShortcutScopeState extends State<_GlobalShortcutScope> {
     }
 
     final key = event.logicalKey;
-    final keys = HardwareKeyboard.instance.logicalKeysPressed;
-    final ctrlPressed =
-        keys.contains(LogicalKeyboardKey.controlLeft) ||
-        keys.contains(LogicalKeyboardKey.controlRight);
-
-    if (key == LogicalKeyboardKey.escape) {
-      final navigator = Navigator.of(context, rootNavigator: true);
-      unawaited(navigator.maybePop());
-      return KeyEventResult.handled;
-    }
-
-    if (PlatformDetection.isDesktop && key == LogicalKeyboardKey.f11) {
-      unawaited(() async {
-        final full = await windowManager.isFullScreen();
-        await windowManager.setFullScreen(!full);
-      }());
-      return KeyEventResult.handled;
-    }
-
-    if (PlatformDetection.isDesktop && ctrlPressed && key == LogicalKeyboardKey.keyQ) {
-      unawaited(windowManager.close());
-      return KeyEventResult.handled;
-    }
 
     if (key == LogicalKeyboardKey.enter || key == LogicalKeyboardKey.select) {
       final targetContext = FocusManager.instance.primaryFocus?.context ?? context;
