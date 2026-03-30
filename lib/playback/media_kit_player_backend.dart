@@ -72,6 +72,9 @@ class MediaKitPlayerBackend implements PlayerBackend {
     final maxBitrate = int.tryParse(_prefs.get(UserPreferences.maxBitrate));
     final ac3Enabled = _prefs.get(UserPreferences.ac3Enabled);
     final trueHdEnabled = _prefs.get(UserPreferences.trueHdEnabled);
+    final pgsDirectPlay =
+        _prefs.get(UserPreferences.pgsDirectPlay) && canRenderBitmapSubtitles;
+    final assDirectPlay = _prefs.get(UserPreferences.assDirectPlay);
     final stereoDownmix =
         _prefs.get(UserPreferences.audioBehavior) == AudioBehavior.downmixToStereo;
 
@@ -81,6 +84,8 @@ class MediaKitPlayerBackend implements PlayerBackend {
       trueHdEnabled: trueHdEnabled,
       stereoDownmix: stereoDownmix,
       useProgressiveTranscode: useProgressiveTranscode,
+      pgsDirectPlay: pgsDirectPlay,
+      assDirectPlay: assDirectPlay,
     );
   }
 

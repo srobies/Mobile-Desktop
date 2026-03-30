@@ -93,6 +93,7 @@ class JellyfinMediaStreamResolver implements MediaStreamResolver {
       playMethod: playMethod,
       externalSubtitles: authedSubs,
       mediaStreams: source.mediaStreams,
+      transcodingReasons: source.transcodingReasons,
     );
   }
 

@@ -10,6 +10,8 @@ class DeviceProfileBuilder {
     bool stereoDownmix = false,
     bool useProgressiveTranscode = false,
     bool subtitlesInManifest = true,
+    bool pgsDirectPlay = false,
+    bool assDirectPlay = true,
   }) {
     final bitrate = maxBitrateMbps == null ? null : maxBitrateMbps * 1000000;
     final streamingBitrate = bitrate == null
@@ -33,7 +35,10 @@ class DeviceProfileBuilder {
       ),
       'ContainerProfiles': <Map<String, dynamic>>[],
       'CodecProfiles': _codecProfiles(stereoDownmix: stereoDownmix),
-      'SubtitleProfiles': _subtitleProfiles(),
+      'SubtitleProfiles': _subtitleProfiles(
+        pgsDirectPlay: pgsDirectPlay,
+        assDirectPlay: assDirectPlay,
+      ),
     };
   }
 
@@ -227,23 +232,26 @@ class DeviceProfileBuilder {
     ];
   }
 
-  static List<Map<String, dynamic>> _subtitleProfiles() {
+  static List<Map<String, dynamic>> _subtitleProfiles({
+    required bool pgsDirectPlay,
+    required bool assDirectPlay,
+  }) {
     return [
       {'Format': 'srt', 'Method': 'External'},
       {'Format': 'srt', 'Method': 'Embed'},
       {'Format': 'subrip', 'Method': 'External'},
       {'Format': 'subrip', 'Method': 'Embed'},
       {'Format': 'ass', 'Method': 'External'},
-      {'Format': 'ass', 'Method': 'Embed'},
+      if (assDirectPlay) {'Format': 'ass', 'Method': 'Embed'},
       {'Format': 'ssa', 'Method': 'External'},
-      {'Format': 'ssa', 'Method': 'Embed'},
+      if (assDirectPlay) {'Format': 'ssa', 'Method': 'Embed'},
       {'Format': 'vtt', 'Method': 'External'},
       {'Format': 'vtt', 'Method': 'Embed'},
       {'Format': 'webvtt', 'Method': 'External'},
       {'Format': 'webvtt', 'Method': 'Embed'},
       {'Format': 'sub', 'Method': 'External'},
       {'Format': 'sub', 'Method': 'Embed'},
-      if (PlatformDetection.isDesktop) ...[
+      if (pgsDirectPlay) ...[
         {'Format': 'pgs', 'Method': 'Embed'},
         {'Format': 'pgssub', 'Method': 'Embed'},
         {'Format': 'dvbsub', 'Method': 'Embed'},

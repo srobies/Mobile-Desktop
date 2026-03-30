@@ -37,6 +37,8 @@ class VideoPlayerScreen extends StatefulWidget {
 }
 
 class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindingObserver {
+  static final _camelCaseSpaceRe = RegExp(r'(?<=[a-z])(?=[A-Z])');
+
   final _manager = GetIt.instance<PlaybackManager>();
   final _backend = GetIt.instance<MediaKitPlayerBackend>();
   final _prefs = GetIt.instance<UserPreferences>();
@@ -2247,6 +2249,15 @@ class _VideoPlayerScreenState extends State<VideoPlayerScreen> with WidgetsBindi
 
               sectionHeader('Playback'),
               infoRow('Play Method', methodLabel, highlight: true),
+              if (resolution != null &&
+                  playMethod == StreamPlayMethod.transcode &&
+                  resolution.transcodingReasons.isNotEmpty)
+                infoRow(
+                  'Transcode Reasons',
+                  resolution.transcodingReasons
+                      .map((r) => r.replaceAllMapped(_camelCaseSpaceRe, (_) => ' '))
+                      .join(', '),
+                ),
               infoRow('Player', 'media_kit (libmpv)'),
               infoRow('Container', container),
               infoRow('Bitrate', _formatBitrate(bitrate)),

@@ -63,6 +63,7 @@ class EmbyMediaStreamResolver implements MediaStreamResolver {
       playMethod: playMethod,
       externalSubtitles: externalSubs,
       mediaStreams: source.mediaStreams,
+      transcodingReasons: source.transcodingReasons,
     );
   }
 
