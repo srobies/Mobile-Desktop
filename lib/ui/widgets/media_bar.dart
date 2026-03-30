@@ -450,10 +450,10 @@ class _MediaBarState extends State<MediaBar> with WidgetsBindingObserver {
     bool showRetry = false,
   }) {
     return SizedBox(
-      height: 92,
+      height: widget.height,
       width: double.infinity,
       child: Padding(
-        padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+        padding: const EdgeInsets.fromLTRB(16, 12, 16, 12),
         child: DecoratedBox(
           decoration: BoxDecoration(
             color: Colors.black.withValues(alpha: 0.35),

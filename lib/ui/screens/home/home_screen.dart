@@ -646,6 +646,10 @@ class _ContentRowsState extends State<_ContentRows>
   }
 
   bool _isMediaBarIncluded() {
+    if (!widget.prefs.get(UserPreferences.mediaBarEnabled)) {
+      return false;
+    }
+
     final mediaBarState = widget.mediaBarViewModel.state;
     return mediaBarState is MediaBarLoading ||
         mediaBarState is MediaBarError ||
