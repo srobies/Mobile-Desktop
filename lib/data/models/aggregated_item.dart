@@ -29,7 +29,14 @@ class AggregatedItem {
   int? get indexNumber => rawData['IndexNumber'] as int?;
   int? get parentIndexNumber => rawData['ParentIndexNumber'] as int?;
 
-  int? get runTimeTicks => rawData['RunTimeTicks'] as int?;
+  int? _toInt(dynamic value) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value);
+    return null;
+  }
+
+  int? get runTimeTicks => _toInt(rawData['RunTimeTicks']);
   Duration? get runtime => runTimeTicks != null
       ? Duration(microseconds: runTimeTicks! ~/ 10)
       : null;
@@ -39,6 +46,15 @@ class AggregatedItem {
 
   String? get primaryImageTag =>
       (rawData['ImageTags'] as Map?)?['Primary'] as String?;
+
+  String? get thumbImageTag =>
+      (rawData['ImageTags'] as Map?)?['Thumb'] as String?;
+
+  String? get primaryImageTagField =>
+      rawData['PrimaryImageTag'] as String?;
+
+  String? get primaryImageItemId =>
+      rawData['PrimaryImageItemId'] as String?;
 
   List<String> get backdropImageTags =>
       (rawData['BackdropImageTags'] as List?)?.cast<String>() ?? const [];
@@ -64,7 +80,7 @@ class AggregatedItem {
       _userData?['IsFavorite'] as bool? ?? false;
 
   int? get playbackPositionTicks =>
-      _userData?['PlaybackPositionTicks'] as int?;
+      _toInt(_userData?['PlaybackPositionTicks']);
 
   Duration? get playbackPosition => playbackPositionTicks != null
       ? Duration(microseconds: playbackPositionTicks! ~/ 10)
@@ -107,6 +123,16 @@ class AggregatedItem {
   String? get seasonId => rawData['SeasonId'] as String?;
   String? get seriesPrimaryImageTag =>
       rawData['SeriesPrimaryImageTag'] as String?;
+  String? get seriesThumbImageTag =>
+      rawData['SeriesThumbImageTag'] as String?;
+  String? get parentPrimaryImageTag =>
+      rawData['ParentPrimaryImageTag'] as String?;
+  String? get parentPrimaryImageItemId =>
+      rawData['ParentPrimaryImageItemId'] as String?;
+  String? get parentThumbItemId =>
+      rawData['ParentThumbItemId'] as String?;
+  String? get parentThumbImageTag =>
+      rawData['ParentThumbImageTag'] as String?;
   String? get status => rawData['Status'] as String?;
   int? get childCount => rawData['ChildCount'] as int?;
 

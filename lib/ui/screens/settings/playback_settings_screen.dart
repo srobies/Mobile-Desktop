@@ -1,3 +1,5 @@
+import 'dart:io';
+
 import 'package:file_picker/file_picker.dart';
 import 'package:flutter/material.dart';
 import 'package:get_it/get_it.dart';
@@ -87,6 +89,13 @@ class PlaybackSettingsScreen extends StatelessWidget {
             subtitle: 'Dim video and show overview text while paused',
             icon: Icons.description,
           ),
+          if (PlatformDetection.isMobile)
+            SwitchPreferenceTile(
+              preference: UserPreferences.osdLockEnabled,
+              title: 'OSD Lock Button',
+              subtitle: 'Show a lock button that blocks touch input until long-pressed',
+              icon: Icons.lock_outline,
+            ),
           _section(context, 'Audio'),
           EnumPreferenceTile<AudioBehavior>(
             preference: UserPreferences.audioBehavior,
@@ -114,7 +123,7 @@ class PlaybackSettingsScreen extends StatelessWidget {
             subtitle: 'Compress dynamic range',
             icon: Icons.nightlight,
           ),
-          if (PlatformDetection.isDesktop) ...[
+          if (PlatformDetection.isDesktop || Platform.isAndroid) ...[
             _section(context, 'Advanced mpv'),
             SwitchPreferenceTile(
               preference: UserPreferences.customMpvConfEnabled,

@@ -1863,7 +1863,9 @@ class _ActionButtonsState extends State<_ActionButtons> {
     final item = viewModel.item!;
     final isPhoto = item.type == 'Photo';
     final isBook = _isReadableBookItem(item);
-    final hasProgress = (item.playedPercentage ?? 0) > 0;
+    final hasProgress =
+        (item.playedPercentage ?? 0) > 0 ||
+        (item.playbackPosition?.inMilliseconds ?? 0) > 0;
     final selectedSource = _selectedMediaSourceForItem(item, widget.selectedMediaSourceId);
     final mediaStreams = _mediaStreamsForItem(item, selectedSource);
     final audioStreams = mediaStreams.where((s) => s['Type'] == 'Audio').toList();
@@ -2095,12 +2097,23 @@ class _ActionButtonsState extends State<_ActionButtons> {
     ).showSnackBar(const SnackBar(content: Text('Failed to delete item')));
   }
 
+  int? _effectiveSubtitleStreamIndex() {
+    if (_selectedSubtitleIndex != null) {
+      return _selectedSubtitleIndex;
+    }
+    final defaultToNone = GetIt.instance<UserPreferences>().get(
+      UserPreferences.subtitlesDefaultToNone,
+    );
+    return defaultToNone ? -1 : null;
+  }
+
   void _play(
     BuildContext context,
     AggregatedItem item, {
     bool resume = false,
   }) async {
     final manager = GetIt.instance<PlaybackManager>();
+    final subtitleStreamIndex = _effectiveSubtitleStreamIndex();
 
     if (item.type == 'Photo') {
       await context.push(Destinations.photo(item.id));
@@ -2141,7 +2154,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           [nextUp],
           startPosition: startPosition,
           audioStreamIndex: _selectedAudioIndex,
-          subtitleStreamIndex: _selectedSubtitleIndex,
+          subtitleStreamIndex: subtitleStreamIndex,
         );
 
       case 'Season':
@@ -2163,7 +2176,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           startIndex: idx,
           startPosition: startPosition,
           audioStreamIndex: _selectedAudioIndex,
-          subtitleStreamIndex: _selectedSubtitleIndex,
+          subtitleStreamIndex: subtitleStreamIndex,
         );
 
       case 'Episode':
@@ -2180,7 +2193,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
             startIndex: idx,
             startPosition: startPosition,
             audioStreamIndex: _selectedAudioIndex,
-            subtitleStreamIndex: _selectedSubtitleIndex,
+            subtitleStreamIndex: subtitleStreamIndex,
             mediaSourceId: widget.selectedMediaSourceId,
           );
           break;
@@ -2200,7 +2213,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           [item],
           startPosition: startPosition,
           audioStreamIndex: _selectedAudioIndex,
-          subtitleStreamIndex: _selectedSubtitleIndex,
+          subtitleStreamIndex: subtitleStreamIndex,
           mediaSourceId: widget.selectedMediaSourceId,
         );
     }
@@ -2212,6 +2225,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
   }
 
   Future<void> _castToDevice(BuildContext context, AggregatedItem item) {
+    final subtitleStreamIndex = _effectiveSubtitleStreamIndex();
     final positionTicks =
         item.playbackPosition == null
             ? null
@@ -2222,7 +2236,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
       startPositionTicks: positionTicks,
       mediaSourceId: widget.selectedMediaSourceId,
       audioStreamIndex: _selectedAudioIndex,
-      subtitleStreamIndex: _selectedSubtitleIndex,
+      subtitleStreamIndex: subtitleStreamIndex,
     );
   }
 
@@ -2237,15 +2251,42 @@ class _ActionButtonsState extends State<_ActionButtons> {
     return extraType == 'Trailer' || type == 'Trailer';
   }
 
+  AggregatedItem? _firstLocalTrailerFromFeatures(List<AggregatedItem> features) {
+    for (final feature in features) {
+      if (_isTrailerFeatureItem(feature) && feature.id.isNotEmpty) {
+        return feature;
+      }
+    }
+    return null;
+  }
+
+  Future<AggregatedItem?> _loadLocalTrailerOnDemand(AggregatedItem item) async {
+    final client = GetIt.instance<MediaServerClient>();
+    try {
+      final trailers = await client.itemsApi.getLocalTrailers(item.id);
+      for (final raw in trailers) {
+        final id = raw['Id'] as String?;
+        if (id == null || id.isEmpty) {
+          continue;
+        }
+        return AggregatedItem(
+          id: id,
+          serverId: item.serverId,
+          rawData: raw,
+        );
+      }
+    } catch (_) {}
+    return null;
+  }
+
   Future<void> _playTrailer(BuildContext context, AggregatedItem item) async {
     final manager = GetIt.instance<PlaybackManager>();
 
-    final localTrailer = viewModel.features.firstWhere(
-      _isTrailerFeatureItem,
-      orElse: () => const AggregatedItem(id: '', serverId: '', rawData: {}),
-    );
+    var localTrailer = _firstLocalTrailerFromFeatures(viewModel.features);
+    localTrailer ??= await _loadLocalTrailerOnDemand(item);
+    if (!context.mounted) return;
 
-    if (localTrailer.id.isNotEmpty) {
+    if (localTrailer != null) {
       manager.playItems([localTrailer]);
       await context.push(Destinations.videoPlayer);
       viewModel.load();
@@ -2751,12 +2792,22 @@ String? _resolutionFromStreams(List<Map<String, dynamic>> streams) {
   if (video == null) {
     return null;
   }
-  final height = video['Height'];
-  if (height is int && height > 0) {
-    if (height >= 2160) return '4K';
-    return '${height}p';
+  final width = video['Width'] as int?;
+  final height = video['Height'] as int?;
+  if (width == null || height == null || width <= 0 || height <= 0) {
+    return null;
   }
-  return null;
+
+  final interlaced = video['IsInterlaced'] == true;
+  final suffix = interlaced ? 'i' : 'p';
+
+  if (width >= 7600 || height >= 4300) return '8K';
+  if (width >= 3800 || height >= 2000) return '4K';
+  if (width >= 2500 || height >= 1400) return '1440$suffix';
+  if (width >= 1800 || height >= 1000) return '1080$suffix';
+  if (width >= 1200 || height >= 700) return '720$suffix';
+  if (width >= 600 || height >= 400) return '480$suffix';
+  return 'SD';
 }
 
 String? _hdrFromStreams(List<Map<String, dynamic>> streams) {
@@ -3945,14 +3996,7 @@ class _SeasonsRow extends StatelessWidget {
           return MediaCard(
             title: season.name,
             subtitle: _progressText(season),
-            imageUrl:
-                season.primaryImageTag != null
-                    ? imageApi.getPrimaryImageUrl(
-                      season.id,
-                      maxHeight: isMobile ? 300 : 400,
-                      tag: season.primaryImageTag,
-                    )
-                    : null,
+            imageUrl: _seasonImageUrl(season, isMobile: isMobile),
             width: cardWidth,
             aspectRatio: 2 / 3,
             focusColor: Color(prefs.get(UserPreferences.focusColor).colorValue),
@@ -3969,6 +4013,41 @@ class _SeasonsRow extends StatelessWidget {
         },
       ),
     );
+  }
+
+  String? _seasonImageUrl(AggregatedItem season, {required bool isMobile}) {
+    final primaryHeight = isMobile ? 300 : 400;
+    final secondaryWidth = isMobile ? 200 : 260;
+
+    String? primary(String? id, String? tag) {
+      if (id == null || tag == null) return null;
+      return imageApi.getPrimaryImageUrl(id, maxHeight: primaryHeight, tag: tag);
+    }
+
+    String? thumb(String? id, String? tag) {
+      if (id == null) return null;
+      return imageApi.getThumbImageUrl(id, maxWidth: secondaryWidth, tag: tag);
+    }
+
+    String? backdrop(String? id, List<String> tags) {
+      if (id == null || tags.isEmpty) return null;
+      return imageApi.getBackdropImageUrl(
+        id,
+        maxWidth: secondaryWidth,
+        index: 0,
+        tag: tags.first,
+      );
+    }
+
+    return primary(season.id, season.primaryImageTag) ??
+        primary(season.seriesId, season.seriesPrimaryImageTag) ??
+        primary(season.primaryImageItemId, season.primaryImageTagField) ??
+        primary(season.parentPrimaryImageItemId, season.parentPrimaryImageTag) ??
+        thumb(season.id, season.thumbImageTag) ??
+        backdrop(season.id, season.backdropImageTags) ??
+        thumb(season.seriesId, season.seriesThumbImageTag) ??
+        thumb(season.parentThumbItemId, season.parentThumbImageTag) ??
+        backdrop(season.parentBackdropItemId, season.parentBackdropImageTags);
   }
 
   String? _progressText(AggregatedItem season) {
