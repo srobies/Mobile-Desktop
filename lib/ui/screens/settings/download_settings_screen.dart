@@ -5,7 +5,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:get_it/get_it.dart';
 import 'package:go_router/go_router.dart';
-import 'package:permission_handler/permission_handler.dart';
 
 import '../../../data/models/download_quality.dart';
 import '../../../data/providers/offline_providers.dart';
@@ -15,6 +14,7 @@ import '../../../di/providers.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../util/download_utils.dart';
 import '../../../util/platform_detection.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../navigation/destinations.dart';
 
 class DownloadSettingsScreen extends ConsumerWidget {
@@ -28,70 +28,73 @@ class DownloadSettingsScreen extends ConsumerWidget {
     final storageLimitMb = prefs.get(UserPreferences.downloadStorageLimitMb);
     final customPath = prefs.get(UserPreferences.customDownloadPath);
     final storage = ref.watch(storageUsedProvider);
+    final l10n = AppLocalizations.of(context);
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Downloads')),
+      appBar: AppBar(title: Text(l10n.download)),
       body: ListView(
         children: [
-          const _Section(title: 'Quality'),
+          _Section(title: l10n.quality),
           ListTile(
             leading: const Icon(Icons.high_quality),
-            title: const Text('Default Download Quality'),
+            title: Text(l10n.defaultDownloadQuality),
             subtitle: Text(_qualityLabel(qualityName)),
             onTap: () => _pickQuality(context, prefs, qualityName),
           ),
 
-          const _Section(title: 'Network'),
+          _Section(title: l10n.network),
           if (!PlatformDetection.isDesktop)
             SwitchListTile(
               secondary: const Icon(Icons.wifi),
-              title: const Text('WiFi-Only Downloads'),
-              subtitle: const Text('Only download when connected to WiFi'),
+              title: Text(l10n.wifiOnlyDownloads),
+              subtitle: Text(l10n.onlyDownloadOnWifi),
               value: wifiOnly,
               onChanged: (v) => prefs.set(UserPreferences.downloadWifiOnly, v),
             ),
-          const _Section(title: 'Storage'),
+          _Section(title: l10n.storage),
           storage.when(
             data: (bytes) => ListTile(
               leading: const Icon(Icons.storage),
-              title: const Text('Storage Used'),
+              title: Text(l10n.storageUsed),
               subtitle: Text(formatBytes(bytes)),
               trailing: TextButton(
-                child: const Text('Manage'),
+                child: Text(l10n.manage),
                 onPressed: () => context.push(Destinations.storageManagement),
               ),
             ),
-            loading: () => const ListTile(
-              leading: Icon(Icons.storage),
-              title: Text('Storage Used'),
-              subtitle: Text('Calculating...'),
+            loading: () => ListTile(
+              leading: const Icon(Icons.storage),
+              title: Text(l10n.storageUsed),
+              subtitle: Text(l10n.calculating),
             ),
             error: (_, __) => const SizedBox.shrink(),
           ),
           ListTile(
             leading: const Icon(Icons.data_usage),
-            title: const Text('Storage Limit'),
-            subtitle: Text(storageLimitMb == 0 ? 'No limit' : '${(storageLimitMb / 1024).toStringAsFixed(1)} GB'),
+            title: Text(l10n.storageLimit),
+            subtitle: Text(storageLimitMb == 0 ? l10n.noLimit : l10n.gbValue((storageLimitMb / 1024).toStringAsFixed(1))),
             onTap: () => _pickStorageLimit(context, prefs, storageLimitMb),
           ),
-          if (PlatformDetection.isDesktop || Platform.isAndroid)
+          if (PlatformDetection.isDesktop)
             ListTile(
               leading: const Icon(Icons.folder_open),
-              title: const Text('Download Location'),
-              subtitle: Text(customPath.isEmpty ? 'Default' : customPath),
+              title: Text(l10n.downloadLocation),
+              subtitle: Text(customPath.isEmpty ? l10n.defaultLabel : customPath),
               onTap: () => _pickFolder(context, prefs),
             ),
-          if (Platform.isAndroid && customPath.isNotEmpty)
-            ListTile(
-              leading: const Icon(Icons.restart_alt),
-              title: const Text('Reset to Default'),
-              onTap: () => _resetToDefault(context, prefs),
+          if (Platform.isAndroid)
+            SwitchListTile(
+              secondary: const Icon(Icons.folder_open),
+              title: Text(l10n.saveToDownloadsFolder),
+              subtitle: Text(l10n.downloadsVisibleToOtherApps),
+              value: customPath == 'mediastore',
+              onChanged: (v) => _toggleMediaStore(context, prefs, v),
             ),
 
-          const _Section(title: 'Danger Zone'),
+          _Section(title: l10n.dangerZone),
           ListTile(
             leading: const Icon(Icons.delete_forever, color: Colors.redAccent),
-            title: const Text('Clear All Downloads', style: TextStyle(color: Colors.redAccent)),
+            title: Text(l10n.clearAllDownloads, style: const TextStyle(color: Colors.redAccent)),
             onTap: () => _confirmClearAll(context),
           ),
         ],
@@ -128,6 +131,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
   }
 
   void _pickStorageLimit(BuildContext context, UserPreferences prefs, int current) {
+    final l10n = AppLocalizations.of(context);
     final values = [0, 1024, 2048, 5120, 10240, 20480, 51200, 102400];
     showModalBottomSheet(
       context: context,
@@ -135,7 +139,7 @@ class DownloadSettingsScreen extends ConsumerWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: values.map((mb) => RadioListTile<int>(
-            title: Text(mb == 0 ? 'No limit' : '${(mb / 1024).toStringAsFixed(0)} GB'),
+            title: Text(mb == 0 ? l10n.noLimit : l10n.gbValue((mb / 1024).toStringAsFixed(0))),
             value: mb,
             groupValue: current,
             onChanged: (v) {
@@ -149,25 +153,6 @@ class DownloadSettingsScreen extends ConsumerWidget {
   }
 
   Future<void> _pickFolder(BuildContext context, UserPreferences prefs) async {
-    if (Platform.isAndroid) {
-      final status = await Permission.manageExternalStorage.status;
-      if (!status.isGranted) {
-        final result = await Permission.manageExternalStorage.request();
-        if (!result.isGranted) {
-          if (context.mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(
-                content: Text(
-                  'Storage permission is required to use a custom download folder.',
-                ),
-              ),
-            );
-          }
-          return;
-        }
-      }
-    }
-
     final result = await FilePicker.platform.getDirectoryPath();
     if (result == null) return;
 
@@ -175,23 +160,20 @@ class DownloadSettingsScreen extends ConsumerWidget {
     if (result == oldPath) return;
     if (!context.mounted) return;
 
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Change Download Location'),
-        content: const Text(
-          'New downloads will be saved to the selected folder. '
-          'Existing downloads will remain in their current location '
-          'and can be managed from Storage settings.',
-        ),
+        title: Text(l10n.changeDownloadLocation),
+        content: Text(l10n.changeDownloadLocationDescription),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Confirm'),
+            child: Text(l10n.confirm),
           ),
         ],
       ),
@@ -202,11 +184,8 @@ class DownloadSettingsScreen extends ConsumerWidget {
     if (!await storage.canWriteTo(result)) {
       if (context.mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text(
-              'Cannot write to selected folder. '
-              'Please choose a different location or grant storage permissions.',
-            ),
+          SnackBar(
+            content: Text(l10n.cannotWriteToFolder),
           ),
         );
       }
@@ -217,45 +196,55 @@ class DownloadSettingsScreen extends ConsumerWidget {
     storage.clearCache();
   }
 
-  Future<void> _resetToDefault(BuildContext context, UserPreferences prefs) async {
+  Future<void> _toggleMediaStore(
+    BuildContext context,
+    UserPreferences prefs,
+    bool enable,
+  ) async {
+    if (!enable) {
+      await prefs.set(UserPreferences.customDownloadPath, '');
+      GetIt.instance<StoragePathService>().clearCache();
+      return;
+    }
+
+    if (!context.mounted) return;
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Reset Download Location'),
-        content: const Text(
-          'New downloads will be saved to the default app storage. '
-          'Existing downloads in the custom folder will remain there.',
-        ),
+        title: Text(l10n.saveToDownloadsFolderQuestion),
+        content: Text(l10n.saveToDownloadsFolderDescription),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx, false),
-            child: const Text('Cancel'),
+            child: Text(l10n.cancel),
           ),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
-            child: const Text('Reset'),
+            child: Text(l10n.enable),
           ),
         ],
       ),
     );
     if (confirmed != true) return;
 
-    await prefs.set(UserPreferences.customDownloadPath, '');
+    await prefs.set(UserPreferences.customDownloadPath, 'mediastore');
     GetIt.instance<StoragePathService>().clearCache();
   }
 
   Future<void> _confirmClearAll(BuildContext context) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Clear All Downloads'),
-        content: const Text('This will delete all downloaded media and cannot be undone.'),
+        title: Text(l10n.clearAllDownloads),
+        content: Text(l10n.clearAllDownloadsWarning),
         actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('Cancel')),
+          TextButton(onPressed: () => Navigator.pop(ctx, false), child: Text(l10n.cancel)),
           TextButton(
             onPressed: () => Navigator.pop(ctx, true),
             style: TextButton.styleFrom(foregroundColor: Colors.redAccent),
-            child: const Text('Clear All'),
+            child: Text(l10n.clearAll),
           ),
         ],
       ),

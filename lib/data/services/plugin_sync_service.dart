@@ -38,6 +38,8 @@ class PluginSyncService extends ChangeNotifier {
   String? get seerrUrl => _seerrUrl;
   bool _seerrEnabled = false;
   bool get seerrEnabled => _seerrEnabled;
+  bool _seerrInfoAvailable = false;
+  bool get seerrInfoAvailable => _seerrInfoAvailable;
 
   bool _mdblistAvailable = false;
   bool get mdblistAvailable => _mdblistAvailable;
@@ -92,6 +94,7 @@ class PluginSyncService extends ChangeNotifier {
     _pluginVersion = null;
     _seerrUrl = null;
     _seerrEnabled = false;
+    _seerrInfoAvailable = false;
     _mdblistAvailable = false;
     _tmdbAvailable = false;
     if (notify) {
@@ -144,6 +147,7 @@ class PluginSyncService extends ChangeNotifier {
 
       final seerrConfig = await _fetchJellyseerrConfig(client);
       if (seerrConfig != null) {
+        _seerrInfoAvailable = true;
         _seerrUrl = _readString(seerrConfig, 'url') ?? _seerrUrl;
 
         final enabled = _readBool(seerrConfig, 'enabled');
@@ -207,7 +211,7 @@ class PluginSyncService extends ChangeNotifier {
         await _prefs.set(UserPreferences.pluginSyncEnabled, true);
       }
 
-      _applyServerSettings(resolved);
+      await _applyServerSettings(resolved);
     } catch (_) {
       resetState();
     }
@@ -343,7 +347,7 @@ class PluginSyncService extends ChangeNotifier {
     return null;
   }
 
-  void _applyServerSettings(Map<String, dynamic> resolved) {
+  Future<void> _applyServerSettings(Map<String, dynamic> resolved) async {
     _applyString(resolved, 'navbarPosition', UserPreferences.navbarPosition,
         enumValues: prefs.NavbarPosition.values);
     _applyBool(resolved, 'showClock', UserPreferences.showClock);
@@ -446,7 +450,7 @@ class PluginSyncService extends ChangeNotifier {
     if (resolved['homeRowOrder'] is List) {
       final serverOrder = (resolved['homeRowOrder'] as List).cast<String>();
       if (serverOrder.isEmpty) {
-        _applyFallbackHomeRows();
+        await _applyFallbackHomeRows();
       } else {
         final sections = <HomeSectionConfig>[];
         var order = 0;
@@ -456,7 +460,7 @@ class PluginSyncService extends ChangeNotifier {
           sections.add(HomeSectionConfig(type: type, enabled: true, order: order++));
         }
         if (sections.isEmpty) {
-          _applyFallbackHomeRows();
+          await _applyFallbackHomeRows();
         } else {
           final enabledTypes = sections.map((s) => s.type).toSet();
           for (final type in prefs.HomeSectionType.values) {
@@ -465,7 +469,7 @@ class PluginSyncService extends ChangeNotifier {
               sections.add(HomeSectionConfig(type: type, enabled: false, order: order++));
             }
           }
-          _prefs.setHomeSectionsConfig(sections);
+          await _prefs.setHomeSectionsConfig(sections);
         }
       }
     }
@@ -487,7 +491,7 @@ class PluginSyncService extends ChangeNotifier {
               configs.add(SeerrRowConfig(type: type, enabled: false, order: order++));
             }
           }
-          _seerrPrefs.setRowsConfig(configs);
+          await _seerrPrefs.setRowsConfig(configs);
         }
       }
     }
@@ -495,7 +499,7 @@ class PluginSyncService extends ChangeNotifier {
     _prefs.notifyPreferenceChanged();
   }
 
-  void _applyFallbackHomeRows() {
+  Future<void> _applyFallbackHomeRows() async {
     const fallbackEnabled = <prefs.HomeSectionType>[
       prefs.HomeSectionType.resume,
       prefs.HomeSectionType.nextUp,
@@ -516,7 +520,7 @@ class PluginSyncService extends ChangeNotifier {
       sections.add(HomeSectionConfig(type: type, enabled: false, order: order++));
     }
 
-    _prefs.setHomeSectionsConfig(sections);
+    await _prefs.setHomeSectionsConfig(sections);
   }
 
   void _applyBool(

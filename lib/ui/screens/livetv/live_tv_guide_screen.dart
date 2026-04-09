@@ -5,6 +5,7 @@ import 'package:go_router/go_router.dart';
 import 'package:server_core/server_core.dart';
 
 import '../../../data/viewmodels/live_tv_guide_view_model.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../util/platform_detection.dart';
@@ -16,6 +17,15 @@ const _kChannelColumnWidth = 160.0;
 const _kRowHeight = 74.0;
 const _kTimeHeaderHeight = 40.0;
 const _kPixelsPerMinute = 6.0;
+const _kMinGuideHours = 3;
+const _kMaxGuideHours = 12;
+
+int _guideHoursForWidth(double availableWidth) {
+  final guideWidth = availableWidth - _kChannelColumnWidth;
+  if (guideWidth <= 0) return _kMinGuideHours;
+  final hours = (guideWidth / (_kPixelsPerMinute * 60)).floor();
+  return hours.clamp(_kMinGuideHours, _kMaxGuideHours);
+}
 
 class LiveTvGuideScreen extends StatefulWidget {
   const LiveTvGuideScreen({super.key});
@@ -61,12 +71,17 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
     super.initState();
     _vm = LiveTvGuideViewModel(GetIt.instance<MediaServerClient>());
     _vm.addListener(_onChanged);
-    _vm.load();
 
     _channelScrollController.addListener(_syncVerticalScroll);
     _programScrollController.addListener(_syncVerticalScroll);
     _timeHeaderHorizontalScrollController.addListener(_syncHorizontalFromHeader);
     _guideHorizontalScrollController.addListener(_syncHorizontalFromGuide);
+
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (!mounted) return;
+      final width = MediaQuery.sizeOf(context).width - _contentLeftInset();
+      _vm.load(windowHours: _guideHoursForWidth(width));
+    });
   }
 
   bool _syncingScroll = false;
@@ -155,6 +170,8 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
     return minutes * _kPixelsPerMinute;
   }
 
+  int _lastComputedHours = _kMinGuideHours;
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -162,19 +179,33 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
       body: NavigationLayout(
         showBackButton: true,
         child: SafeArea(
-          child: Padding(
-            padding: EdgeInsets.only(
-              top: _contentTopInset(),
-              left: _contentLeftInset(),
-            ),
-            child: Column(
-              children: [
-                _buildToolbar(),
-                _buildFilterChips(),
-                const SizedBox(height: 8),
-                Expanded(child: _buildBody()),
-              ],
-            ),
+          child: LayoutBuilder(
+            builder: (context, constraints) {
+              final hours = _guideHoursForWidth(
+                constraints.maxWidth - _contentLeftInset(),
+              );
+              if (hours != _lastComputedHours &&
+                  _vm.state == GuideState.ready) {
+                _lastComputedHours = hours;
+                WidgetsBinding.instance.addPostFrameCallback((_) {
+                  if (mounted) _vm.setWindowHours(hours);
+                });
+              }
+              return Padding(
+                padding: EdgeInsets.only(
+                  top: _contentTopInset(),
+                  left: _contentLeftInset(),
+                ),
+                child: Column(
+                  children: [
+                    _buildToolbar(),
+                    _buildFilterChips(),
+                    const SizedBox(height: 8),
+                    Expanded(child: _buildBody()),
+                  ],
+                ),
+              );
+            },
           ),
         ),
       ),
@@ -188,15 +219,15 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
         children: [
           IconButton(
             icon: const Icon(Icons.chevron_left, color: Colors.white),
-            onPressed: () => _vm.shiftWindow(-3),
+            onPressed: () => _vm.shiftWindow(-_vm.guideWindowHours),
           ),
           TextButton(
             onPressed: () => _vm.goToNow(),
-            child: const Text('Now', style: TextStyle(color: Colors.blue)),
+            child: Text(AppLocalizations.of(context).now, style: const TextStyle(color: Colors.blue)),
           ),
           IconButton(
             icon: const Icon(Icons.chevron_right, color: Colors.white),
-            onPressed: () => _vm.shiftWindow(3),
+            onPressed: () => _vm.shiftWindow(_vm.guideWindowHours),
           ),
           const SizedBox(width: 8),
           Text(
@@ -249,16 +280,19 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
     );
   }
 
-  String _filterLabel(GuideFilter f) => switch (f) {
-    GuideFilter.all => 'All',
-    GuideFilter.movies => 'Movies',
-    GuideFilter.series => 'Series',
-    GuideFilter.sports => 'Sports',
-    GuideFilter.news => 'News',
-    GuideFilter.kids => 'Kids',
-    GuideFilter.premiere => 'Premiere',
-    GuideFilter.favorites => 'Favorites',
-  };
+  String _filterLabel(GuideFilter f) {
+    final l10n = AppLocalizations.of(context);
+    return switch (f) {
+      GuideFilter.all => l10n.all,
+      GuideFilter.movies => l10n.movies,
+      GuideFilter.series => l10n.series,
+      GuideFilter.sports => l10n.sports,
+      GuideFilter.news => l10n.news,
+      GuideFilter.kids => l10n.kids,
+      GuideFilter.premiere => l10n.premiere,
+      GuideFilter.favorites => l10n.favorites,
+    };
+  }
 
   Widget _buildBody() {
     switch (_vm.state) {
@@ -267,7 +301,7 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
       case GuideState.error:
         return Center(
           child: Text(
-            'Failed to load guide: ${_vm.errorMessage}',
+            AppLocalizations.of(context).failedToLoadGuide(_vm.errorMessage ?? ''),
             style: TextStyle(color: Colors.white.withAlpha(179)),
           ),
         );
@@ -276,7 +310,7 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
         if (channels.isEmpty) {
           return Center(
             child: Text(
-              'No channels found',
+              AppLocalizations.of(context).noChannelsFound,
               style: TextStyle(color: Colors.white.withAlpha(179)),
             ),
           );
@@ -291,7 +325,7 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
     return Column(
       children: [
         HorizontalScrollSection(
-          title: 'Guide Timeline',
+          title: AppLocalizations.of(context).guideTimeline,
           scrollController: _timeHeaderHorizontalScrollController,
           onScrollPastStart: () => _vm.shiftWindow(-1),
           onScrollPastEnd: () => _vm.shiftWindow(1),
@@ -502,7 +536,7 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
                         color: Colors.red,
                         borderRadius: BorderRadius.circular(2),
                       ),
-                      child: const Text('LIVE', style: TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
+                      child: Text(AppLocalizations.of(context).liveBadge, style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold)),
                     ),
                   if (program.hasTimer)
                     const Padding(
@@ -555,6 +589,7 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
   void _showProgramDetails(GuideProgram program) {
     final channel = _vm.channelForId(program.channelId);
     final isFavoriteChannel = channel?.isFavorite ?? false;
+    final l10n = AppLocalizations.of(context);
 
     showDialog(
       context: context,
@@ -582,12 +617,12 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
               Wrap(
                 spacing: 8,
                 children: [
-                  if (program.isMovie) const Chip(label: Text('Movie'), visualDensity: VisualDensity.compact),
-                  if (program.isSeries) const Chip(label: Text('Series'), visualDensity: VisualDensity.compact),
-                  if (program.isSports) const Chip(label: Text('Sports'), visualDensity: VisualDensity.compact),
-                  if (program.isNews) const Chip(label: Text('News'), visualDensity: VisualDensity.compact),
-                  if (program.isKids) const Chip(label: Text('Kids'), visualDensity: VisualDensity.compact),
-                  if (program.isPremiere) const Chip(label: Text('Premiere'), visualDensity: VisualDensity.compact),
+                  if (program.isMovie) Chip(label: Text(l10n.movie), visualDensity: VisualDensity.compact),
+                  if (program.isSeries) Chip(label: Text(l10n.series), visualDensity: VisualDensity.compact),
+                  if (program.isSports) Chip(label: Text(l10n.sports), visualDensity: VisualDensity.compact),
+                  if (program.isNews) Chip(label: Text(l10n.news), visualDensity: VisualDensity.compact),
+                  if (program.isKids) Chip(label: Text(l10n.kids), visualDensity: VisualDensity.compact),
+                  if (program.isPremiere) Chip(label: Text(l10n.premiere), visualDensity: VisualDensity.compact),
                 ],
               ),
             ],
@@ -606,22 +641,22 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
                         SnackBar(
                           content: Text(
                             isFavoriteChannel
-                                ? 'Removed from favorite channels'
-                                : 'Added to favorite channels',
+                                ? l10n.removedFromFavoriteChannels
+                                : l10n.addedToFavoriteChannels,
                           ),
                         ),
                       );
                     } catch (_) {
                       if (!context.mounted) return;
                       ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Failed to update favorite channel'),
+                        SnackBar(
+                          content: Text(l10n.failedToUpdateFavoriteChannel),
                         ),
                       );
                     }
                   },
             child: Text(
-              isFavoriteChannel ? 'Unfavorite Channel' : 'Favorite Channel',
+              isFavoriteChannel ? l10n.unfavoriteChannel : l10n.favoriteChannel,
             ),
           ),
           TextButton(
@@ -629,11 +664,11 @@ class _LiveTvGuideScreenState extends State<LiveTvGuideScreen> {
               Navigator.of(context).pop();
               _watchChannel(program.channelId);
             },
-            child: const Text('Watch'),
+            child: Text(l10n.watch),
           ),
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
-            child: const Text('Close'),
+            child: Text(l10n.close),
           ),
         ],
       ),

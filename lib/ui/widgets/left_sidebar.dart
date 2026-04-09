@@ -14,6 +14,7 @@ import '../../data/services/plugin_sync_service.dart';
 import '../../preference/preference_constants.dart';
 import '../../preference/seerr_preferences.dart';
 import '../../preference/user_preferences.dart';
+import '../../l10n/app_localizations.dart';
 import '../../util/platform_detection.dart';
 import '../navigation/destinations.dart';
 import '../navigation/home_refresh_bus.dart';
@@ -298,12 +299,14 @@ class _LeftSidebarState extends State<LeftSidebar> {
   }
 
   Widget _buildContent() {
+    final l10n = AppLocalizations.of(context);
     final showShuffle = _prefs.get(UserPreferences.showShuffleButton);
     final showGenres = _prefs.get(UserPreferences.showGenresButton);
     final showFavorites = _prefs.get(UserPreferences.showFavoritesButton);
     final showLibraries = _prefs.get(UserPreferences.showLibrariesInToolbar);
     final showFolders = _prefs.get(UserPreferences.enableFolderView);
     final showSyncPlay = _prefs.get(UserPreferences.syncPlayEnabled);
+    final pluginSync = GetIt.instance<PluginSyncService>();
     final clockBehavior = _prefs.get(UserPreferences.clockBehavior);
     final showClock = clockBehavior == ClockBehavior.always ||
         clockBehavior == ClockBehavior.inMenus;
@@ -319,7 +322,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
             children: [
               _SidebarItem(
                 icon: Icons.home_rounded,
-                label: 'Home',
+                label: l10n.home,
                 showLabel: _showLabels,
                 isActive: _isActive(Destinations.home),
                 onPressed: () {
@@ -334,7 +337,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
               ),
               _SidebarItem(
                 icon: Icons.search_rounded,
-                label: 'Search',
+                label: l10n.search,
                 showLabel: _showLabels,
                 isActive: _isActive(Destinations.search),
                 onPressed: () { _onNavigate(); context.push(Destinations.search); },
@@ -342,7 +345,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
               if (showShuffle)
                 _SidebarItem(
                   icon: Icons.shuffle_rounded,
-                  label: 'Shuffle',
+                  label: l10n.shuffle,
                   showLabel: _showLabels,
                   onPressed: () {
                     _onNavigate();
@@ -361,7 +364,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
                     height: size,
                     color: color,
                   ),
-                  label: 'Genres',
+                  label: l10n.genres,
                   showLabel: _showLabels,
                   isActive: _isActive(Destinations.allGenres),
                   onPressed: () { _onNavigate(); context.push(Destinations.allGenres); },
@@ -369,7 +372,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
               if (showFavorites)
                 _SidebarItem(
                   icon: Icons.favorite_rounded,
-                  label: 'Favorites',
+                  label: l10n.favorites,
                   showLabel: _showLabels,
                   isActive: _isActive(Destinations.allFavorites),
                   onPressed: () { _onNavigate(); context.push(Destinations.allFavorites); },
@@ -377,7 +380,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
               if (showFolders)
                 _SidebarItem(
                   icon: Icons.folder_rounded,
-                  label: 'Folders',
+                  label: l10n.folders,
                   showLabel: _showLabels,
                   isActive: _isActive(Destinations.folderView),
                   onPressed: () { _onNavigate(); context.push(Destinations.folderView); },
@@ -385,18 +388,19 @@ class _LeftSidebarState extends State<LeftSidebar> {
               if (showSyncPlay)
                 _SidebarItem(
                   icon: Icons.groups_rounded,
-                  label: 'SyncPlay',
+                  label: l10n.syncPlay,
                   showLabel: _showLabels,
                   onPressed: () {},
                 ),
-              if (GetIt.instance<PluginSyncService>().pluginAvailable &&
+              if (pluginSync.pluginAvailable &&
+                  pluginSync.seerrInfoAvailable &&
                   _prefs.get(UserPreferences.seerrEnabled))
                 Builder(builder: (context) {
                   final seerrPrefs = GetIt.instance<SeerrPreferences>();
                   final isSeerr = seerrPrefs.isSeerrVariant;
                   final label = seerrPrefs.moonfinDisplayName.isNotEmpty
                       ? seerrPrefs.moonfinDisplayName
-                      : (isSeerr ? 'Seerr' : 'Jellyseerr');
+                      : (isSeerr ? l10n.seerr : l10n.jellyseerr);
                   return _SidebarItem(
                     iconBuilder: (size, color) => isSeerr
                         ? SeerrIcon(size: size, color: color)
@@ -417,7 +421,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
                     color: color,
                     fit: BoxFit.contain,
                   ),
-                  label: 'Libraries',
+                  label: l10n.libraries,
                   showLabel: _showLabels,
                   isActive: _librariesExpanded,
                   trailing: _showLabels
@@ -463,7 +467,7 @@ class _LeftSidebarState extends State<LeftSidebar> {
           padding: const EdgeInsets.symmetric(horizontal: 8),
           child: _SidebarItem(
             icon: Icons.settings_rounded,
-            label: 'Settings',
+            label: l10n.settings,
             showLabel: _showLabels,
             isActive: _isActive(Destinations.settings),
             onPressed: () { _onNavigate(); context.push(Destinations.settings); },

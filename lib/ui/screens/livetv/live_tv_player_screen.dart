@@ -10,6 +10,7 @@ import 'package:server_core/server_core.dart';
 
 import '../../../data/models/aggregated_item.dart';
 import '../../../data/viewmodels/live_tv_guide_view_model.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../playback/media_kit_player_backend.dart';
 import '../../../preference/preference_constants.dart';
 import '../../../preference/user_preferences.dart';
@@ -90,7 +91,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen> {
       debugPrint('[LiveTV] Playback failed for channel ${channel.name}: $e');
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Failed to play ${channel.name}')),
+          SnackBar(content: Text(AppLocalizations.of(context).failedToPlayChannel(channel.name))),
         );
       }
       return;
@@ -216,6 +217,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen> {
   SubtitleViewConfiguration _buildSubtitleConfig() {
     final textColor = Color(_prefs.get(UserPreferences.subtitlesTextColor));
     final bgColor = Color(_prefs.get(UserPreferences.subtitlesBackgroundColor));
+    final strokeColor = Color(_prefs.get(UserPreferences.subtitleTextStrokeColor));
     final prefSize = _prefs.get(UserPreferences.subtitlesTextSize);
     final fontWeight = _prefs.get(UserPreferences.subtitlesTextWeight);
     final offset = _prefs.get(UserPreferences.subtitlesOffsetPosition);
@@ -226,6 +228,17 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen> {
     final bottomPadding =
         basePadding + (offset * MediaQuery.sizeOf(context).height * 0.5);
 
+    // Build stroke outline shadows when the stroke color is visible.
+    final hasStroke = strokeColor.alpha > 0;
+    final strokeShadows = hasStroke
+        ? <Shadow>[
+            Shadow(offset: const Offset(-1, -1), color: strokeColor),
+            Shadow(offset: const Offset(1, -1), color: strokeColor),
+            Shadow(offset: const Offset(-1, 1), color: strokeColor),
+            Shadow(offset: const Offset(1, 1), color: strokeColor),
+          ]
+        : null;
+
     return SubtitleViewConfiguration(
       visible: true,
       style: TextStyle(
@@ -234,6 +247,7 @@ class _LiveTvPlayerScreenState extends State<LiveTvPlayerScreen> {
         color: textColor,
         fontWeight: fontWeight >= 700 ? FontWeight.bold : FontWeight.normal,
         backgroundColor: bgColor,
+        shadows: strokeShadows,
       ),
       textAlign: TextAlign.center,
       padding: EdgeInsets.fromLTRB(16.0, 0.0, 16.0, bottomPadding),

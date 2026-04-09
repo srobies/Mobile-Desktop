@@ -22,15 +22,20 @@ import '../../../data/services/book_document_service.dart';
 import '../../../data/services/book_reader_service.dart';
 import '../../../data/services/media_server_client_factory.dart';
 import '../../../util/platform_detection.dart';
+import '../../../l10n/app_localizations.dart';
 
 class BookReaderScreen extends StatefulWidget {
   final String itemId;
   final String? serverId;
+  final int? initialPosition;
+  final String? initialMode;
 
   const BookReaderScreen({
     super.key,
     required this.itemId,
     this.serverId,
+    this.initialPosition,
+    this.initialMode,
   });
 
   @override
@@ -83,6 +88,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   Uint8List? _epubBytes;
   final Map<BookDocumentTheme, List<String>> _epubThemeCache = {};
   Timer? _comicStateSaveDebounce;
+  Timer? _pdfPageSaveDebounce;
+  List<_BookmarkEntry> _bookmarks = const [];
+  List<({String title, int chapterIndex, int depth})> _epubTocEntries = const [];
+  List<({String title, int page, int depth})> _pdfOutline = const [];
   static const int _comicCacheRadius = 2;
   static const String _readerThemePrefKey = 'book_reader_theme_mode';
   static const String _fixedLayoutInvertPrefKey =
@@ -165,6 +174,24 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
   String get _twoPageSpreadPrefKey => 'book_reader_comic_two_page_spread';
 
+  String get _epubProgressPrefKey {
+    final item = _item;
+    if (item == null) return 'book_reader_epub_unknown_chapter';
+    return 'book_reader_epub_${item.serverId}_${item.id}_chapter';
+  }
+
+  String get _pdfProgressPrefKey {
+    final item = _item;
+    if (item == null) return 'book_reader_pdf_unknown_page';
+    return 'book_reader_pdf_${item.serverId}_${item.id}_page';
+  }
+
+  String get _bookmarkPrefKey {
+    final item = _item;
+    if (item == null) return 'book_reader_bookmarks_unknown';
+    return 'book_reader_bookmarks_${item.serverId}_${item.id}';
+  }
+
   MediaServerClient _resolveClient() {
     final factory = GetIt.instance<MediaServerClientFactory>();
     if (widget.serverId == null) {
@@ -187,6 +214,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   void dispose() {
     WidgetsBinding.instance.removeObserver(this);
     _comicStateSaveDebounce?.cancel();
+    _pdfPageSaveDebounce?.cancel();
     SystemChrome.setEnabledSystemUIMode(SystemUiMode.edgeToEdge);
     _pageController.dispose();
     _comicTransformController.dispose();
@@ -203,7 +231,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   Future<void> _loadAndPrepare() async {
     await _loadItem();
     if (_item != null && _error == null) {
-      await _prepareReaderContent();
+      await Future.wait([
+        _loadBookmarks(),
+        _prepareReaderContent(),
+      ]);
     }
   }
 
@@ -231,11 +262,13 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       final extension = BookReaderService.detectExtension(item);
 
       if (extension != null && !BookReaderService.isSupportedExtension(extension)) {
+        if (!mounted) return;
+        final l10n = AppLocalizations.of(context);
         setState(() {
           _item = item;
           _extension = extension;
           _loading = false;
-          _error = 'Unsupported book format: .$extension';
+          _error = l10n.unsupportedBookFormat(extension);
         });
         return;
       }
@@ -249,9 +282,11 @@ class _BookReaderScreenState extends State<BookReaderScreen>
         }
       });
     } catch (e) {
+      if (!mounted) return;
+      final l10n = AppLocalizations.of(context);
       setState(() {
         _loading = false;
-        _error = 'Failed to load book details: $e';
+        _error = l10n.failedToLoadBookDetails('$e');
       });
     }
   }
@@ -357,10 +392,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
             return;
           }
 
+          final l10n = AppLocalizations.of(context);
           setState(() {
             _mode = _ReaderMode.fallback;
-            _fallbackMessage =
-                'EPUB rendering in-app is not available on this platform yet.';
+            _fallbackMessage = l10n.epubUnavailableOnPlatform;
             _fallbackExternalUri = fallbackUriCandidate;
           });
           return;
@@ -372,10 +407,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
             ext == 'mobi' || ext == 'azw' || ext == 'azw3';
         if (unsupportedDoc) {
           if (!mounted) return;
+          final l10n = AppLocalizations.of(context);
           setState(() {
             _mode = _ReaderMode.fallback;
-            _fallbackMessage =
-                'This format (.$ext) cannot be rendered in-app yet.';
+            _fallbackMessage = l10n.formatCannotRenderInApp(ext);
             _fallbackExternalUri = uris.isNotEmpty ? uris.first : null;
           });
           return;
@@ -383,10 +418,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
         if (!_supportsEmbeddedWebView) {
           if (!mounted) return;
+          final l10n = AppLocalizations.of(context);
           setState(() {
             _mode = _ReaderMode.fallback;
-            _fallbackMessage =
-                'Embedded document rendering is unavailable on this platform.';
+            _fallbackMessage = l10n.embeddedRenderingUnavailable;
           });
           return;
         }
@@ -426,11 +461,12 @@ class _BookReaderScreenState extends State<BookReaderScreen>
         return;
       }
 
+      final l10n = AppLocalizations.of(context);
       setState(() {
         _mode = _ReaderMode.fallback;
-        _fallbackMessage = 'Failed to open in-app reader: $e';
+        _fallbackMessage = l10n.failedToOpenInAppReader('$e');
         _fallbackExternalUri = fallbackUriCandidate;
-        _error = 'Failed to open in-app reader: $e';
+        _error = l10n.failedToOpenInAppReader('$e');
       });
     } finally {
       if (mounted) {
@@ -450,7 +486,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     final ok = await launchUrl(uri, mode: LaunchMode.externalApplication);
     if (!ok && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Could not open external viewer.')),
+        SnackBar(content: Text(AppLocalizations.of(context).couldNotOpenExternalViewer)),
       );
     }
   }
@@ -461,6 +497,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   ) async {
     final bytes = await BookDocumentService.downloadBytes(uris, headers);
     final chapterHtml = _resolveEpubChapterHtml(bytes, _currentEpubTheme);
+    final tocEntries = BookDocumentService.extractEpubTocEntries(bytes);
+    if (mounted && tocEntries.isNotEmpty) {
+      setState(() => _epubTocEntries = tocEntries);
+    }
 
     if (!_supportsEmbeddedWebView && !kIsWeb && (PlatformDetection.isLinux || PlatformDetection.isWindows)) {
       if (!mounted) {
@@ -475,6 +515,16 @@ class _BookReaderScreenState extends State<BookReaderScreen>
         _currentEpubChapter = 0;
         _webLoadProgress = 100;
       });
+      final prefs = await SharedPreferences.getInstance();
+      final initialChapter = (widget.initialMode == 'epub' && widget.initialPosition != null)
+          ? widget.initialPosition!
+          : (prefs.getInt(_epubProgressPrefKey) ?? 0);
+      final savedChapter = initialChapter.clamp(0, chapterHtml.length - 1);
+      if (savedChapter > 0 && mounted) {
+        setState(() {
+          _currentEpubChapter = savedChapter;
+        });
+      }
       return;
     }
 
@@ -516,7 +566,12 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       _currentEpubChapter = 0;
     });
 
-    await _loadEpubChapter(0);
+    final prefs = await SharedPreferences.getInstance();
+    final initialChapter = (widget.initialMode == 'epub' && widget.initialPosition != null)
+        ? widget.initialPosition!
+        : (prefs.getInt(_epubProgressPrefKey) ?? 0);
+    final savedChapter = initialChapter.clamp(0, chapterHtml.length - 1);
+    await _loadEpubChapter(savedChapter);
   }
 
   Future<void> _loadEpubChapter(int index) async {
@@ -539,6 +594,9 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       _currentEpubChapter = clamped;
       _webLoadProgress = controller == null ? 100 : 0;
     });
+
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setInt(_epubProgressPrefKey, clamped);
   }
 
   Future<void> _goToPdfPage(int targetPage) async {
@@ -745,8 +803,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     return archive.files
         .where((file) =>
             file.isFile &&
-            _isImageFileName(file.name) &&
-            file.content is List<int>)
+        _isImageFileName(file.name))
         .toList()
       ..sort((a, b) => a.name.toLowerCase().compareTo(b.name.toLowerCase()));
   }
@@ -770,12 +827,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       return null;
     }
 
-    final content = _comicEntries[index].content;
-    if (content is! List<int>) {
-      return null;
-    }
-
-    final bytes = content is Uint8List ? content : Uint8List.fromList(content);
+    final bytes = _comicEntries[index].content;
     _comicPageCache[index] = bytes;
     _trimComicCache(index);
     return bytes;
@@ -830,9 +882,386 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     return '${_currentComicPage + 1}/$_comicPageCount';
   }
 
+  Future<void> _loadBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    final raw = prefs.getStringList(_bookmarkPrefKey) ?? const [];
+    final entries = raw
+        .map((s) {
+          try {
+            return _BookmarkEntry.fromJson(s);
+          } catch (_) {
+            return null;
+          }
+        })
+        .whereType<_BookmarkEntry>()
+        .toList();
+    if (mounted) {
+      setState(() {
+        _bookmarks = entries;
+      });
+    }
+  }
+
+  Future<void> _saveBookmarks() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setStringList(
+      _bookmarkPrefKey,
+      _bookmarks.map((b) => b.toJson()).toList(),
+    );
+  }
+
+  String _currentPositionLabel() {
+    final l10n = AppLocalizations.of(context);
+    return switch (_mode) {
+      _ReaderMode.epub => l10n.chapterNumber(_currentEpubChapter + 1),
+      _ReaderMode.pdf => l10n.pageLabel(_currentPdfPage),
+      _ReaderMode.comic => l10n.pageLabel(_currentComicPage + 1),
+      _ => l10n.position,
+    };
+  }
+
+  int _currentPositionIndex() {
+    return switch (_mode) {
+      _ReaderMode.epub => _currentEpubChapter,
+      _ReaderMode.pdf => _currentPdfPage,
+      _ReaderMode.comic => _currentComicPage,
+      _ => 0,
+    };
+  }
+
+  Future<void> _addCurrentBookmark() async {
+    final label = _currentPositionLabel();
+    final position = _currentPositionIndex();
+    final mode = _mode;
+
+    if (_bookmarks.any((b) => b.mode == mode && b.position == position)) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(content: Text(AppLocalizations.of(context).bookmarkAlreadySaved(label))),
+        );
+      }
+      return;
+    }
+
+    final entry = _BookmarkEntry(
+      mode: mode,
+      position: position,
+      label: label,
+      createdAt: DateTime.now(),
+    );
+
+    setState(() {
+      _bookmarks = [..._bookmarks, entry]
+        ..sort((a, b) => a.position.compareTo(b.position));
+    });
+    await _saveBookmarks();
+
+    if (mounted) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text(AppLocalizations.of(context).bookmarkAdded(label))),
+      );
+    }
+  }
+
+  Future<void> _deleteBookmark(int index) async {
+    final updated = List<_BookmarkEntry>.from(_bookmarks)..removeAt(index);
+    setState(() {
+      _bookmarks = updated;
+    });
+    await _saveBookmarks();
+  }
+
+  Future<void> _navigateToBookmark(_BookmarkEntry bookmark) async {
+    Navigator.of(context).pop();
+    switch (bookmark.mode) {
+      case _ReaderMode.epub:
+        await _loadEpubChapter(bookmark.position);
+      case _ReaderMode.pdf:
+        await _goToPdfPage(bookmark.position);
+      case _ReaderMode.comic:
+        await _goToComicPage(bookmark.position);
+      default:
+        break;
+    }
+  }
+
+  void _showBookmarksSheet() {
+    showModalBottomSheet<void>(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: const Color(0xFF1A2740),
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (context) {
+        return StatefulBuilder(
+          builder: (context, setSheetState) {
+            final l10n = AppLocalizations.of(context);
+            return DraggableScrollableSheet(
+              expand: false,
+              initialChildSize: 0.45,
+              minChildSize: 0.25,
+              maxChildSize: 0.85,
+              builder: (context, scrollController) {
+                return Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.bookmarks,
+                              color: Colors.white, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              l10n.bookmarks,
+                              style: TextStyle(
+                                  color: Colors.white,
+                                  fontSize: 16,
+                                  fontWeight: FontWeight.w600),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                            onPressed: () => Navigator.of(context).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: Colors.white24, height: 1),
+                    Expanded(
+                      child: _bookmarks.isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  l10n.noBookmarksYet,
+                                  textAlign: TextAlign.center,
+                                  style: TextStyle(
+                                      color: Colors.white54, fontSize: 14),
+                                ),
+                              ),
+                            )
+                          : ListView.builder(
+                              controller: scrollController,
+                              itemCount: _bookmarks.length,
+                              itemBuilder: (context, index) {
+                                final bookmark = _bookmarks[index];
+                                return ListTile(
+                                  leading: const Icon(Icons.bookmark,
+                                      color: Color(0xFF32B9E8), size: 20),
+                                  title: Text(
+                                    bookmark.label,
+                                    style: const TextStyle(
+                                        color: Colors.white,
+                                        fontWeight: FontWeight.w600),
+                                  ),
+                                  subtitle: Text(
+                                    _formatBookmarkDate(bookmark.createdAt, l10n),
+                                    style: const TextStyle(
+                                        color: Colors.white54, fontSize: 12),
+                                  ),
+                                  trailing: IconButton(
+                                    icon: const Icon(Icons.delete_outline,
+                                        color: Colors.white38, size: 20),
+                                    onPressed: () async {
+                                      await _deleteBookmark(index);
+                                      setSheetState(() {});
+                                    },
+                                  ),
+                                  onTap: () => _navigateToBookmark(bookmark),
+                                );
+                              },
+                            ),
+                    ),
+                  ],
+                );
+              },
+            );
+          },
+        );
+      },
+    );
+  }
+
+  String _formatBookmarkDate(DateTime dt, AppLocalizations l10n) {
+    final now = DateTime.now();
+    final diff = now.difference(dt);
+    if (diff.inMinutes < 1) return l10n.justNow;
+    if (diff.inHours < 1) return l10n.minutesAgo(diff.inMinutes);
+    if (diff.inDays < 1) return l10n.hoursAgo(diff.inHours);
+    if (diff.inDays < 7) return l10n.daysAgo(diff.inDays);
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')}';
+  }
+
+  void _showTocPanel() {
+    showGeneralDialog<void>(
+      context: context,
+      barrierDismissible: true,
+      barrierLabel: 'Table of Contents',
+      barrierColor: const Color(0xB3000000),
+      transitionDuration: const Duration(milliseconds: 220),
+      pageBuilder: (dialogContext, _, __) {
+        final l10n = AppLocalizations.of(dialogContext);
+        final media = MediaQuery.of(dialogContext);
+        final panelWidth = (media.size.width * 0.38).clamp(280.0, 420.0);
+        final isEmpty =
+            _mode == _ReaderMode.epub ? _epubTocEntries.isEmpty : _pdfOutline.isEmpty;
+
+        return SafeArea(
+          child: Align(
+            alignment: Alignment.centerLeft,
+            child: Material(
+              color: const Color(0xFF1E1E1E),
+              child: SizedBox(
+                width: panelWidth,
+                height: media.size.height,
+                child: Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.fromLTRB(16, 12, 8, 8),
+                      child: Row(
+                        children: [
+                          const Icon(Icons.menu_book, color: Colors.white70, size: 20),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              l10n.tableOfContents,
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ),
+                          IconButton(
+                            icon: const Icon(Icons.close, color: Colors.white70),
+                            onPressed: () => Navigator.of(dialogContext).pop(),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const Divider(color: Colors.white24, height: 1),
+                    Expanded(
+                      child: isEmpty
+                          ? Center(
+                              child: Padding(
+                                padding: const EdgeInsets.all(24),
+                                child: Text(
+                                  l10n.noTableOfContentsAvailable,
+                                  style: Theme.of(dialogContext).textTheme.bodyMedium,
+                                ),
+                              ),
+                            )
+                          : (_mode == _ReaderMode.epub
+                                ? _buildEpubTocList(dialogContext)
+                                : _buildPdfTocList(dialogContext)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          ),
+        );
+      },
+      transitionBuilder: (context, animation, secondaryAnimation, child) {
+        final offset = Tween<Offset>(
+          begin: const Offset(-1, 0),
+          end: Offset.zero,
+        ).animate(CurvedAnimation(parent: animation, curve: Curves.easeOutCubic));
+        return SlideTransition(position: offset, child: child);
+      },
+    );
+  }
+
+  Widget _buildEpubTocList(BuildContext dialogContext) {
+    final l10n = AppLocalizations.of(dialogContext);
+    return ListView.builder(
+      itemCount: _epubTocEntries.length,
+      itemBuilder: (context, index) {
+        final entry = _epubTocEntries[index];
+        return ListTile(
+          contentPadding: EdgeInsets.fromLTRB(
+            16.0 + (entry.depth * 12.0),
+            4,
+            16,
+            4,
+          ),
+          leading: const Icon(
+            Icons.description_outlined,
+            color: Colors.white70,
+            size: 18,
+          ),
+          title: Text(
+            entry.title,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            l10n.chapterNumber(entry.chapterIndex + 1),
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+            ),
+          ),
+          onTap: () {
+            Navigator.of(dialogContext).pop();
+            _loadEpubChapter(entry.chapterIndex);
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildPdfTocList(BuildContext dialogContext) {
+    final l10n = AppLocalizations.of(dialogContext);
+    return ListView.builder(
+      itemCount: _pdfOutline.length,
+      itemBuilder: (context, index) {
+        final entry = _pdfOutline[index];
+        return ListTile(
+          contentPadding: EdgeInsets.fromLTRB(
+            16.0 + (entry.depth * 12.0),
+            4,
+            16,
+            4,
+          ),
+          leading: const Icon(
+            Icons.picture_in_picture,
+            color: Colors.white70,
+            size: 18,
+          ),
+          title: Text(
+            entry.title,
+            style: const TextStyle(color: Colors.white, fontSize: 14),
+            maxLines: 2,
+            overflow: TextOverflow.ellipsis,
+          ),
+          subtitle: Text(
+            l10n.pageLabel(entry.page),
+            style: const TextStyle(
+              color: Colors.white54,
+              fontSize: 12,
+            ),
+          ),
+          onTap: () {
+            Navigator.of(dialogContext).pop();
+            _goToPdfPage(entry.page);
+          },
+        );
+      },
+    );
+  }
+
+  // ────────────────────────────────────────────────────────────────────────────
+
   Future<void> _restoreComicState() async {
     final prefs = await SharedPreferences.getInstance();
-    final savedPage = prefs.getInt('${_comicProgressKeyPrefix}_page') ?? 0;
+    final initialPage = (widget.initialMode == 'comic' && widget.initialPosition != null)
+        ? widget.initialPosition!
+        : (prefs.getInt('${_comicProgressKeyPrefix}_page') ?? 0);
+    final savedPage = initialPage;
     final savedZoom = prefs.getDouble('${_comicProgressKeyPrefix}_zoom') ?? 1.0;
     final savedSpread = prefs.getBool(_twoPageSpreadPrefKey) ?? false;
 
@@ -1042,6 +1471,9 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       case 'reload':
         _prepareReaderContent();
         return;
+      case 'view_bookmarks':
+        _showBookmarksSheet();
+        return;
       case 'theme-system':
         _setReaderThemeMode(_ReaderThemeMode.system);
         return;
@@ -1165,6 +1597,21 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     await _loadEpubChapter(currentIndex);
   }
 
+  List<({String title, int page, int depth})> _flattenPdfOutline(
+    List<PdfOutlineNode> nodes,
+    int depth,
+  ) {
+    final result = <({String title, int page, int depth})>[];
+    for (final node in nodes) {
+      final page = node.dest?.pageNumber;
+      if (page != null && page > 0) {
+        result.add((title: node.title, page: page, depth: depth));
+      }
+      result.addAll(_flattenPdfOutline(node.children, depth + 1));
+    }
+    return result;
+  }
+
   List<String> _resolveEpubChapterHtml(
     Uint8List bytes,
     BookDocumentTheme theme,
@@ -1200,36 +1647,38 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
   List<PopupMenuEntry<String>> _buildReaderThemeEntries({
     bool includeFixedLayoutInvert = false,
-    String invertLabel = 'Invert Colors (fixed layout)',
+    String invertLabel = '',
   }) {
+    final l10n = AppLocalizations.of(context);
+    final resolvedInvertLabel = invertLabel.isEmpty ? l10n.invertColorsFixedLayout : invertLabel;
     return [
       const PopupMenuDivider(),
       CheckedPopupMenuItem(
         value: 'theme-system',
         checked: _readerThemeMode == _ReaderThemeMode.system,
-        child: const Text('Theme: System'),
+        child: Text(l10n.themeSystem),
       ),
       CheckedPopupMenuItem(
         value: 'theme-light',
         checked: _readerThemeMode == _ReaderThemeMode.light,
-        child: const Text('Theme: Light'),
+        child: Text(l10n.themeLight),
       ),
       CheckedPopupMenuItem(
         value: 'theme-dark',
         checked: _readerThemeMode == _ReaderThemeMode.dark,
-        child: const Text('Theme: Dark'),
+        child: Text(l10n.themeDark),
       ),
       CheckedPopupMenuItem(
         value: 'theme-sepia',
         checked: _readerThemeMode == _ReaderThemeMode.sepia,
-        child: const Text('Theme: Sepia'),
+        child: Text(l10n.themeSepia),
       ),
       if (includeFixedLayoutInvert) ...[
         const PopupMenuDivider(),
         CheckedPopupMenuItem(
           value: 'invert-fixed-layout',
           checked: _invertFixedLayout,
-          child: Text(invertLabel),
+          child: Text(resolvedInvertLabel),
         ),
       ],
     ];
@@ -1247,6 +1696,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     });
 
     final client = _resolveClient();
+    final l10n = AppLocalizations.of(context);
 
     try {
       if (isPlayed) {
@@ -1262,7 +1712,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       }
 
       ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text(isPlayed ? 'Marked as read' : 'Marked as unread')),
+        SnackBar(content: Text(isPlayed ? l10n.markedAsRead : l10n.markedAsUnread)),
       );
     } catch (e) {
       if (!mounted) {
@@ -1270,7 +1720,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       }
 
       setState(() {
-        _error = 'Failed to update read state: $e';
+        _error = l10n.failedToUpdateReadState('$e');
       });
     } finally {
       if (mounted) {
@@ -1312,7 +1762,8 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     }
 
     final item = _item;
-    final title = item?.name ?? 'Book Reader';
+    final l10n = AppLocalizations.of(context);
+    final title = item?.name ?? l10n.bookReader;
     final canOpen = item != null &&
         (_extension == null || BookReaderService.isSupportedExtension(_extension));
     final playedPercentage = item?.playedPercentage;
@@ -1352,16 +1803,16 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                         crossAxisAlignment: WrapCrossAlignment.center,
                         children: [
                           if (_extension != null)
-                            Chip(label: Text('Format: .$_extension')),
+                            Chip(label: Text(l10n.formatExtension(_extension!))),
                           if (hasProgress)
                             Chip(
                               label: Text(
-                                '${playedPercentage!.toStringAsFixed(0)}% read'
+                                '${l10n.percentRead(playedPercentage!.toStringAsFixed(0))}'
                                 '${playbackPosition != null ? ' (${_formatDuration(playbackPosition)})' : ''}',
                               ),
                             )
                           else if (isPlayed)
-                            const Chip(label: Text('Finished')),
+                            Chip(label: Text(l10n.finished)),
                           OutlinedButton.icon(
                             onPressed: _markingPlayed
                                 ? null
@@ -1379,8 +1830,8 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                   ),
                             label: Text(
                               _markingPlayed
-                                  ? 'Updating...'
-                                  : (isPlayed ? 'Mark Unread' : 'Mark as Read'),
+                                  ? l10n.updating
+                                  : (isPlayed ? l10n.markUnread : l10n.markAsRead),
                             ),
                           ),
                           FilledButton.icon(
@@ -1394,7 +1845,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                     child: CircularProgressIndicator(strokeWidth: 2),
                                   )
                                 : const Icon(Icons.refresh),
-                            label: const Text('Reload Reader'),
+                            label: Text(l10n.reloadReader),
                           ),
                         ],
                       ),
@@ -1417,7 +1868,8 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
   Widget _buildComicFullscreen() {
     final item = _item;
-    final title = item?.name ?? 'Book Reader';
+    final l10n = AppLocalizations.of(context);
+    final title = item?.name ?? l10n.bookReader;
     final isPlayed = item?.isPlayed ?? false;
 
     return Scaffold(
@@ -1425,9 +1877,9 @@ class _BookReaderScreenState extends State<BookReaderScreen>
       body: _loadingContent
           ? const Center(child: CircularProgressIndicator())
           : _comicEntries.isEmpty
-              ? const Center(
-                  child: Text('No pages found.',
-                      style: TextStyle(color: Colors.white)))
+              ? Center(
+                  child: Text(l10n.noPagesFound,
+                      style: const TextStyle(color: Colors.white)))
               : Stack(
                   children: [
                     Positioned.fill(
@@ -1454,10 +1906,10 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                   _pageIndexFromViewport(viewportIndex);
                               final leftBytes = _comicPageBytesAt(leftIndex);
                               if (leftBytes == null) {
-                                return const Center(
+                                return Center(
                                   child: Text(
-                                      'Failed to decode page image.',
-                                      style: TextStyle(color: Colors.white)),
+                                      l10n.failedToDecodePageImage,
+                                      style: const TextStyle(color: Colors.white)),
                                 );
                               }
 
@@ -1549,6 +2001,13 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                       onPressed: () =>
                                           Navigator.of(context).pop(),
                                     ),
+                                    if (_epubTocEntries.isNotEmpty || _pdfOutline.isNotEmpty)
+                                      IconButton(
+                                        icon: const Icon(Icons.menu_book,
+                                            color: Colors.white),
+                                        tooltip: l10n.tableOfContents,
+                                        onPressed: _showTocPanel,
+                                      ),
                                     Expanded(
                                       child: Text(
                                         title,
@@ -1563,7 +2022,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                           Icons.center_focus_strong,
                                           color: Colors.white),
                                       tooltip:
-                                          'Reset Zoom (${_comicZoom.toStringAsFixed(1)}x)',
+                                          l10n.resetZoom(_comicZoom.toStringAsFixed(1)),
                                       onPressed: _resetComicZoom,
                                     ),
                                     if (_desktopInputEnabled)
@@ -1575,10 +2034,20 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                           color: Colors.white,
                                         ),
                                         tooltip: _twoPageSpreadEnabled
-                                            ? 'Single Page'
-                                            : 'Two-Page Spread',
+                                            ? l10n.singlePage
+                                            : l10n.twoPageSpread,
                                         onPressed: _toggleTwoPageSpread,
                                       ),
+                                    IconButton(
+                                      icon: Icon(
+                                        _bookmarks.isEmpty
+                                            ? Icons.bookmark_add_outlined
+                                            : Icons.bookmark_add,
+                                        color: Colors.white,
+                                      ),
+                                      tooltip: l10n.addBookmark,
+                                      onPressed: _addCurrentBookmark,
+                                    ),
                                     PopupMenuButton<String>(
                                       icon: const Icon(Icons.more_vert,
                                           color: Colors.white),
@@ -1588,12 +2057,16 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                                           value:
                                               isPlayed ? 'unread' : 'read',
                                           child: Text(isPlayed
-                                              ? 'Mark Unread'
-                                              : 'Mark as Read'),
+                                              ? l10n.markUnread
+                                              : l10n.markAsRead),
                                         ),
-                                        const PopupMenuItem(
+                                        PopupMenuItem(
                                           value: 'reload',
-                                          child: Text('Reload Reader'),
+                                          child: Text(l10n.reloadReader),
+                                        ),
+                                        PopupMenuItem(
+                                          value: 'view_bookmarks',
+                                          child: Text(l10n.bookmarksEllipsis),
                                         ),
                                         ..._buildReaderThemeEntries(
                                           includeFixedLayoutInvert: true,
@@ -1715,7 +2188,8 @@ class _BookReaderScreenState extends State<BookReaderScreen>
   }
 
   Widget _buildDocumentFullscreen() {
-    final title = _item?.name ?? 'Book Reader';
+    final l10n = AppLocalizations.of(context);
+    final title = _item?.name ?? l10n.bookReader;
     final isPlayed = _item?.isPlayed ?? false;
     final isEpub = _mode == _ReaderMode.epub;
     final isPdf = _mode == _ReaderMode.pdf;
@@ -1758,6 +2232,12 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                           icon: const Icon(Icons.arrow_back, color: Colors.white),
                           onPressed: () => Navigator.of(context).pop(),
                         ),
+                        if (_epubTocEntries.isNotEmpty || _pdfOutline.isNotEmpty)
+                          IconButton(
+                            icon: const Icon(Icons.menu_book, color: Colors.white),
+                            tooltip: l10n.tableOfContents,
+                            onPressed: _showTocPanel,
+                          ),
                         Expanded(
                           child: Text(
                             title,
@@ -1766,21 +2246,35 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                             overflow: TextOverflow.ellipsis,
                           ),
                         ),
+                        IconButton(
+                          icon: Icon(
+                            _bookmarks.isEmpty
+                                ? Icons.bookmark_add_outlined
+                                : Icons.bookmark_add,
+                            color: Colors.white,
+                          ),
+                          tooltip: l10n.addBookmark,
+                          onPressed: _addCurrentBookmark,
+                        ),
                         PopupMenuButton<String>(
                           icon: const Icon(Icons.more_vert, color: Colors.white),
                           onSelected: _onReaderMenuSelected,
                           itemBuilder: (_) => [
                             PopupMenuItem(
                               value: isPlayed ? 'unread' : 'read',
-                              child: Text(isPlayed ? 'Mark Unread' : 'Mark as Read'),
+                              child: Text(isPlayed ? l10n.markUnread : l10n.markAsRead),
                             ),
-                            const PopupMenuItem(
+                            PopupMenuItem(
                               value: 'reload',
-                              child: Text('Reload Reader'),
+                              child: Text(l10n.reloadReader),
+                            ),
+                            PopupMenuItem(
+                              value: 'view_bookmarks',
+                              child: Text(l10n.bookmarksEllipsis),
                             ),
                             ..._buildReaderThemeEntries(
                               includeFixedLayoutInvert: isPdf,
-                              invertLabel: 'Invert Colors (PDF)',
+                              invertLabel: AppLocalizations.of(context).invertColorsPdf,
                             ),
                           ],
                         ),
@@ -1943,7 +2437,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
             const CircularProgressIndicator(),
             const SizedBox(height: 12),
             Text(
-              'Preparing in-app reader...',
+              AppLocalizations.of(context).preparingInAppReader,
               style: Theme.of(context).textTheme.bodyMedium,
             ),
           ],
@@ -1954,7 +2448,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     if (_mode == _ReaderMode.pdf) {
       final bytes = _pdfBytes;
       if (bytes == null) {
-        return const Center(child: Text('PDF data not available.'));
+        return Center(child: Text(AppLocalizations.of(context).pdfDataNotAvailable));
       }
       return ColoredBox(
         color: _readerBackgroundColor,
@@ -1964,14 +2458,28 @@ class _BookReaderScreenState extends State<BookReaderScreen>
             sourceName: 'book.pdf',
             controller: _pdfController,
             params: PdfViewerParams(
-              onViewerReady: (document, controller) {
+              onViewerReady: (document, controller) async {
                 if (!mounted) {
                   return;
                 }
-                setState(() {
-                  _pdfPageCount = controller.pageCount;
-                  _currentPdfPage = controller.pageNumber ?? 1;
-                });
+                final pageCount = controller.pageCount;
+                final prefs = await SharedPreferences.getInstance();
+                final initialPage = (widget.initialMode == 'pdf' && widget.initialPosition != null)
+                    ? widget.initialPosition!
+                    : (prefs.getInt(_pdfProgressPrefKey) ?? 1);
+                final savedPage = initialPage.clamp(1, pageCount);
+                final outline = await document.loadOutline();
+                if (mounted) {
+                  final flat = _flattenPdfOutline(outline, 0);
+                  setState(() {
+                    _pdfPageCount = pageCount;
+                    _currentPdfPage = savedPage;
+                    if (flat.isNotEmpty) _pdfOutline = flat;
+                  });
+                }
+                if (savedPage > 1) {
+                  await controller.goToPage(pageNumber: savedPage);
+                }
               },
               onPageChanged: (pageNumber) {
                 if (!mounted || pageNumber == null) {
@@ -1979,6 +2487,12 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                 }
                 setState(() {
                   _currentPdfPage = pageNumber;
+                });
+                _pdfPageSaveDebounce?.cancel();
+                _pdfPageSaveDebounce =
+                    Timer(const Duration(milliseconds: 300), () async {
+                  final prefs = await SharedPreferences.getInstance();
+                  await prefs.setInt(_pdfProgressPrefKey, pageNumber);
                 });
               },
             ),
@@ -1988,6 +2502,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     }
 
     if (_mode == _ReaderMode.fallback) {
+      final l10n = AppLocalizations.of(context);
       final ext = _extension == null ? '' : '.$_extension';
       return Center(
         child: ConstrainedBox(
@@ -2000,19 +2515,19 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                 const Icon(Icons.desktop_windows_outlined, size: 56),
                 const SizedBox(height: 12),
                 Text(
-                  'Reader fallback mode active',
+                  l10n.readerFallbackModeActive,
                   style: Theme.of(context).textTheme.titleMedium,
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
                   _fallbackMessage ??
-                      'This platform cannot host the embedded document engine for $ext files.',
+                      l10n.platformCannotHostDocumentEngine(ext),
                   textAlign: TextAlign.center,
                 ),
                 const SizedBox(height: 8),
                 Text(
-                  'Use Reload Reader after switching to a supported platform target (Android, iOS, macOS).',
+                  l10n.reloadReaderPlatformHint,
                   textAlign: TextAlign.center,
                   style: Theme.of(context).textTheme.bodySmall,
                 ),
@@ -2021,7 +2536,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
                   FilledButton.icon(
                     onPressed: _openFallbackExternally,
                     icon: const Icon(Icons.open_in_new),
-                    label: const Text('Open Externally'),
+                    label: Text(l10n.openExternally),
                   ),
                 ],
               ],
@@ -2033,7 +2548,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
 
     if (_mode == _ReaderMode.epub && (!_supportsEmbeddedWebView && !kIsWeb && (PlatformDetection.isLinux || PlatformDetection.isWindows))) {
       if (_epubChapterHtml.isEmpty) {
-        return const Center(child: Text('No EPUB chapters found.'));
+        return Center(child: Text(AppLocalizations.of(context).noEpubChaptersFound));
       }
 
       final chapter = _epubChapterHtml[
@@ -2052,7 +2567,7 @@ class _BookReaderScreenState extends State<BookReaderScreen>
     final controller = _webController;
     if (controller == null) {
       return Center(
-        child: Text(_error ?? 'Reader not ready.'),
+        child: Text(_error ?? AppLocalizations.of(context).readerNotReady),
       );
     }
 
@@ -2065,6 +2580,53 @@ class _BookReaderScreenState extends State<BookReaderScreen>
             child: LinearProgressIndicator(value: _webLoadProgress / 100),
           ),
       ],
+    );
+  }
+}
+
+class _BookmarkEntry {
+  final _ReaderMode mode;
+  final int position;
+  final String label;
+  final DateTime createdAt;
+
+  const _BookmarkEntry({
+    required this.mode,
+    required this.position,
+    required this.label,
+    required this.createdAt,
+  });
+
+  String toJson() {
+    return '{"mode":"${mode.name}","position":$position,"label":${_jsonString(label)},"createdAt":"${createdAt.toIso8601String()}"}';
+  }
+
+  static String _jsonString(String s) =>
+      '"${s.replaceAll(r'\', r'\\').replaceAll('"', r'\"')}"';
+
+  factory _BookmarkEntry.fromJson(String raw) {
+    final map = <String, dynamic>{};
+    // minimal hand-parsed JSON for the simple flat structure we write
+    final clean = raw.trim();
+    final pairs = RegExp(r'"(\w+)"\s*:\s*(?:"([^"]*)"|([\d]+))')
+        .allMatches(clean);
+    for (final m in pairs) {
+      final key = m.group(1)!;
+      final strVal = m.group(2);
+      final numVal = m.group(3);
+      map[key] = strVal ?? int.parse(numVal!);
+    }
+    final modeName = map['mode'] as String? ?? 'epub';
+    final mode = _ReaderMode.values.firstWhere(
+      (e) => e.name == modeName,
+      orElse: () => _ReaderMode.epub,
+    );
+    return _BookmarkEntry(
+      mode: mode,
+      position: map['position'] as int? ?? 0,
+      label: map['label'] as String? ?? '',
+      createdAt: DateTime.tryParse(map['createdAt'] as String? ?? '') ??
+          DateTime.now(),
     );
   }
 }

@@ -21,6 +21,7 @@ import '../../../data/services/media_server_client_factory.dart';
 import '../../../data/services/book_reader_service.dart';
 import '../../../data/services/theme_music_service.dart';
 import '../../../data/viewmodels/item_detail_view_model.dart';
+import '../../../l10n/app_localizations.dart';
 import '../../../preference/user_preferences.dart';
 import '../../../ui/mixins/focus_state_mixin.dart';
 import '../../../auth/repositories/user_repository.dart';
@@ -35,6 +36,7 @@ import '../../widgets/track_action_dialog.dart';
 import '../../widgets/track_selector_dialog.dart';
 import '../../widgets/remote_play_to_session_dialog.dart';
 import '../../../playback/offline_playback_launcher.dart';
+import '../../../util/audio_labels.dart';
 import '../../../util/download_utils.dart';
 import '../../../util/platform_detection.dart';
 
@@ -74,7 +76,7 @@ Future<bool> _showDeleteConfirmationDialog(
             TextButton(
               onPressed: () => Navigator.pop(ctx, false),
               child: Text(
-                'Cancel',
+                AppLocalizations.of(ctx).cancel,
                 style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
               ),
             ),
@@ -83,7 +85,7 @@ Future<bool> _showDeleteConfirmationDialog(
               style: FilledButton.styleFrom(
                 backgroundColor: const Color(0xFFD32F2F),
               ),
-              child: const Text('Delete'),
+              child: Text(AppLocalizations.of(ctx).delete),
             ),
           ],
         ),
@@ -241,13 +243,13 @@ class _ItemDetailScreenState extends State<ItemDetailScreen>
             const Icon(Icons.error_outline, color: Colors.white54, size: 48),
             const SizedBox(height: 16),
             Text(
-              _viewModel.errorMessage ?? 'Failed to load',
+              _viewModel.errorMessage ?? AppLocalizations.of(context).failedToLoad,
               style: const TextStyle(color: Colors.white54),
             ),
             const SizedBox(height: 16),
             FilledButton(
               onPressed: _viewModel.load,
-              child: const Text('Retry'),
+              child: Text(AppLocalizations.of(context).retry),
             ),
           ],
         ),
@@ -282,6 +284,7 @@ class _DetailContent extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final item = viewModel.item!;
+    final isReadableBook = _isReadableBookItem(item);
     final selectedMediaSource = _selectedMediaSourceForItem(item, selectedMediaSourceId);
     final blurAmount =
         prefs.get(UserPreferences.detailsBackgroundBlurAmount).toDouble();
@@ -290,15 +293,40 @@ class _DetailContent extends StatelessWidget {
     return Stack(
       fit: StackFit.expand,
       children: [
-        if (backdropEnabled)
+        if (isReadableBook)
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                color: Color(0xFF0F182A),
+              ),
+            ),
+          ),
+        if (backdropEnabled && !isReadableBook)
           _Backdrop(url: backdropUrl, blurAmount: blurAmount),
-        const _GradientScrim(),
+        if (isReadableBook)
+          const Positioned.fill(
+            child: DecoratedBox(
+              decoration: BoxDecoration(
+                gradient: LinearGradient(
+                  begin: Alignment.topCenter,
+                  end: Alignment.bottomCenter,
+                  colors: [
+                    Color(0x000F182A),
+                    Color(0x440A1324),
+                  ],
+                ),
+              ),
+            ),
+          )
+        else
+          const _GradientScrim(),
         CustomScrollView(
           slivers: [
             if (item.type != 'Person' &&
                 item.type != 'MusicArtist' &&
                 item.type != 'MusicAlbum' &&
-                item.type != 'Playlist')
+                item.type != 'Playlist' &&
+                !_isReadableBookItem(item))
               SliverToBoxAdapter(
                 child: _HeaderSection(
                   viewModel: viewModel,
@@ -307,9 +335,17 @@ class _DetailContent extends StatelessWidget {
                 ),
               ),
             SliverPadding(
-              padding: EdgeInsets.symmetric(
-                horizontal: _isCompact(context) ? 16 : 48,
-              ),
+              padding: isReadableBook
+                  ? EdgeInsets.fromLTRB(
+                      _isCompact(context) ? 16 : 48,
+                      MediaQuery.of(context).padding.top +
+                          (_isCompact(context) ? 60 : 80),
+                      _isCompact(context) ? 16 : 48,
+                      0,
+                    )
+                  : EdgeInsets.symmetric(
+                      horizontal: _isCompact(context) ? 16 : 48,
+                    ),
               sliver: SliverList(
                 delegate: SliverChildListDelegate(
                   _buildContentForType(context, item),
@@ -324,15 +360,17 @@ class _DetailContent extends StatelessWidget {
 
   List<Widget> _buildContentForType(BuildContext context, AggregatedItem item) {
     return switch (item.type) {
-      'Series' => _buildSeriesContent(item),
-      'Season' => _buildSeasonContent(item),
+      'Series' => _buildSeriesContent(context, item),
+      'Season' => _buildSeasonContent(context, item),
       'Episode' => _buildEpisodeContent(context, item),
-      'Person' => _buildPersonContent(item),
-      'MusicArtist' => _buildArtistContent(item),
+      'Person' => _buildPersonContent(context, item),
+      'MusicArtist' => _buildArtistContent(context, item),
       'MusicAlbum' || 'Playlist' => _buildAlbumContent(context, item),
-      'BoxSet' => _buildBoxSetContent(item),
+      'BoxSet' => _buildBoxSetContent(context, item),
       'Photo' => _buildPhotoContent(item),
-      _ => _buildMovieContent(context, item),
+      _ => _isReadableBookItem(item)
+          ? _buildBookContent(context, item)
+          : _buildMovieContent(context, item),
     };
   }
 
@@ -390,7 +428,231 @@ class _DetailContent extends StatelessWidget {
     ];
   }
 
+  String? _bookAuthorName(AggregatedItem item) {
+    final directAuthor = (item.rawData['Author'] as String?)?.trim();
+    if (directAuthor != null && directAuthor.isNotEmpty) return directAuthor;
+
+    final authors = (item.rawData['Authors'] as List?)
+        ?.whereType<String>()
+        .map((name) => name.trim())
+        .where((name) => name.isNotEmpty)
+        .toList();
+    if (authors != null && authors.isNotEmpty) return authors.first;
+
+    final peopleAuthor = item.people
+        .where((person) {
+          final type = (person['Type'] as String?)?.toLowerCase();
+          return type == 'author' || type == 'writer';
+        })
+        .map((person) => (person['Name'] as String?)?.trim() ?? '')
+        .firstWhere((name) => name.isNotEmpty, orElse: () => '');
+    if (peopleAuthor.isNotEmpty) return peopleAuthor;
+
+    if (item.artists.isNotEmpty) return item.artists.first;
+
+    return null;
+  }
+
+  String? _bookAuthorPersonId(AggregatedItem item) {
+    for (final person in item.people) {
+      final type = (person['Type'] as String?)?.toLowerCase();
+      if (type != 'author' && type != 'writer') continue;
+
+      final id = (person['Id'] as String?)?.trim();
+      if (id != null && id.isNotEmpty) {
+        return id;
+      }
+    }
+    return null;
+  }
+
+  void _openBookAuthorDetails(
+    BuildContext context,
+    AggregatedItem item,
+    String authorName,
+  ) {
+    if (authorName.trim().isEmpty) {
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute<void>(
+        builder:
+            (_) => _BookAuthorDetailScreen(
+              authorName: authorName,
+              authorPersonId: _bookAuthorPersonId(item),
+              serverId: item.serverId,
+            ),
+      ),
+    );
+  }
+
+  List<Widget> _buildBookContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
+    final compact = _isCompact(context);
+    final author = _bookAuthorName(item);
+    final authorDisplay = author ?? l10n.unknownAuthor;
+    final overview = item.overview?.trim();
+    final hasOverview = overview != null && overview.isNotEmpty;
+    final coverTag = item.primaryImageTag;
+    final coverUrl = coverTag == null
+        ? null
+        : viewModel.imageApi.getPrimaryImageUrl(
+            item.id,
+            maxHeight: compact ? 520 : 720,
+            tag: coverTag,
+          );
+
+    return [
+      Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 132,
+            child: AspectRatio(
+              aspectRatio: 2 / 3,
+              child: ClipRRect(
+                borderRadius: BorderRadius.circular(14),
+                child: coverUrl == null
+                    ? Container(
+                        color: const Color(0xFF2C77B7),
+                        alignment: Alignment.center,
+                        child: const Icon(
+                          Icons.auto_stories_rounded,
+                          color: Colors.white,
+                          size: 30,
+                        ),
+                      )
+                    : CachedNetworkImage(
+                        imageUrl: coverUrl,
+                        fit: BoxFit.cover,
+                        errorWidget: (_, __, ___) => Container(
+                          color: const Color(0xFF2C77B7),
+                          alignment: Alignment.center,
+                          child: const Icon(
+                            Icons.auto_stories_rounded,
+                            color: Colors.white,
+                            size: 30,
+                          ),
+                        ),
+                      ),
+              ),
+            ),
+          ),
+          const SizedBox(width: 16),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  item.name,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 24,
+                    fontWeight: FontWeight.w700,
+                    height: 1.15,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                InkWell(
+                  onTap: author != null ? () => _openBookAuthorDetails(context, item, author) : null,
+                  borderRadius: BorderRadius.circular(6),
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 2),
+                    child: Text(
+                      authorDisplay,
+                      style: const TextStyle(
+                        color: Color(0xFF9EDBFF),
+                        fontSize: 16,
+                        fontWeight: FontWeight.w600,
+                        decoration: TextDecoration.underline,
+                        decorationColor: Color(0xFF9EDBFF),
+                      ),
+                    ),
+                  ),
+                ),
+                if (item.productionYear != null) ...[
+                  const SizedBox(height: 8),
+                  Text(
+                    l10n.firstPublished(item.productionYear!),
+                    style: const TextStyle(
+                      color: Color(0xFFBDD8EE),
+                      fontSize: 13,
+                    ),
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ],
+      ),
+      const SizedBox(height: 20),
+      _ActionButtons(
+        viewModel: viewModel,
+        selectedMediaSourceId: selectedMediaSourceId,
+        onSelectedMediaSourceChanged: onSelectedMediaSourceChanged,
+      ),
+      const SizedBox(height: 28),
+      _SectionHeader(title: l10n.overview),
+      const SizedBox(height: 8),
+      Text(
+        hasOverview
+            ? overview
+            : l10n.noOverviewAvailable,
+        style: const TextStyle(
+          color: Color(0xFFD7E8F6),
+          fontSize: 14,
+          height: 1.5,
+        ),
+      ),
+      if (item.genres.isNotEmpty) ...[
+        const SizedBox(height: 20),
+        _SectionHeader(title: l10n.genres),
+        const SizedBox(height: 10),
+        Wrap(
+          spacing: 8,
+          runSpacing: 8,
+          children: item.genres
+              .take(24)
+              .map(
+                (genre) => Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: const Color(0x1F8EC8F0),
+                    borderRadius: BorderRadius.circular(999),
+                    border: Border.all(color: const Color(0x558EC8F0)),
+                  ),
+                  child: Text(
+                    genre,
+                    style: const TextStyle(
+                      color: Color(0xFFD7E8F6),
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              )
+              .toList(),
+        ),
+      ],
+      if (viewModel.similar.isNotEmpty) ...[
+        const SizedBox(height: 32),
+        HorizontalScrollSection(
+          title: l10n.moreLikeThis,
+          builder: (_, ctrl) => _SimilarRow(
+            items: viewModel.similar,
+            imageApi: viewModel.imageApi,
+            prefs: prefs,
+            scrollController: ctrl,
+          ),
+        ),
+      ],
+      const SizedBox(height: 48),
+    ];
+  }
+
   List<Widget> _buildMovieContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     return [
       _ActionButtons(
         viewModel: viewModel,
@@ -409,7 +671,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.actors.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Cast & Crew',
+          title: l10n.castAndCrew,
           builder: (_, ctrl) => _CastRow(
             people: viewModel.actors,
             imageApi: viewModel.imageApi,
@@ -421,7 +683,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.parentCollectionItems.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: viewModel.parentCollectionName ?? 'Collection',
+          title: viewModel.parentCollectionName ?? l10n.collection,
           builder: (_, ctrl) => _SimilarRow(
             items: viewModel.parentCollectionItems,
             imageApi: viewModel.imageApi,
@@ -433,7 +695,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.similar.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'More Like This',
+          title: l10n.moreLikeThis,
           builder: (_, ctrl) => _SimilarRow(
             items: viewModel.similar,
             imageApi: viewModel.imageApi,
@@ -446,7 +708,8 @@ class _DetailContent extends StatelessWidget {
     ];
   }
 
-  List<Widget> _buildSeriesContent(AggregatedItem item) {
+  List<Widget> _buildSeriesContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     return [
       _ActionButtons(
         viewModel: viewModel,
@@ -459,14 +722,14 @@ class _DetailContent extends StatelessWidget {
       ],
       if (viewModel.nextUp != null) ...[
         const SizedBox(height: 32),
-        _SectionHeader(title: 'Next Up'),
+        _SectionHeader(title: l10n.nextUp),
         const SizedBox(height: 12),
         _NextUpCard(episode: viewModel.nextUp!, imageApi: viewModel.imageApi),
       ],
       if (viewModel.seasons.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Seasons',
+          title: l10n.seasons,
           builder: (_, ctrl) => _SeasonsRow(
             seasons: viewModel.seasons,
             imageApi: viewModel.imageApi,
@@ -478,7 +741,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.actors.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Cast & Crew',
+          title: l10n.castAndCrew,
           builder: (_, ctrl) => _CastRow(
             people: viewModel.actors,
             imageApi: viewModel.imageApi,
@@ -490,7 +753,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.similar.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'More Like This',
+          title: l10n.moreLikeThis,
           builder: (_, ctrl) => _SimilarRow(
             items: viewModel.similar,
             imageApi: viewModel.imageApi,
@@ -503,7 +766,8 @@ class _DetailContent extends StatelessWidget {
     ];
   }
 
-  List<Widget> _buildSeasonContent(AggregatedItem item) {
+  List<Widget> _buildSeasonContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     return [
       _ActionButtons(
         viewModel: viewModel,
@@ -512,7 +776,7 @@ class _DetailContent extends StatelessWidget {
       ),
       if (viewModel.episodes.isNotEmpty) ...[
         const SizedBox(height: 32),
-        _SectionHeader(title: 'Episodes'),
+        _SectionHeader(title: l10n.episodes),
         const SizedBox(height: 12),
         ...viewModel.episodes.map(
           (ep) => Padding(
@@ -526,6 +790,7 @@ class _DetailContent extends StatelessWidget {
   }
 
   List<Widget> _buildEpisodeContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     return [
       _ActionButtons(
         viewModel: viewModel,
@@ -542,9 +807,28 @@ class _DetailContent extends StatelessWidget {
         selectedMediaSourceId: selectedMediaSourceId,
       ),
       if (viewModel.episodes.isNotEmpty) ...[
+        () {
+          final currentIndex = viewModel.episodes.indexWhere((ep) => ep.id == item.id);
+          final nextEpisode = (currentIndex >= 0 && currentIndex < viewModel.episodes.length - 1)
+              ? viewModel.episodes[currentIndex + 1]
+              : null;
+          if (nextEpisode != null) {
+            return Padding(
+              padding: const EdgeInsets.only(top: 32),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _SectionHeader(title: l10n.nextEpisode),
+                  _NextUpCard(episode: nextEpisode, imageApi: viewModel.imageApi),
+                ],
+              ),
+            );
+          }
+          return const SizedBox.shrink();
+        }(),
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Episodes',
+          title: l10n.moreFromThisSeason,
           builder: (_, ctrl) => _EpisodesRow(
             episodes: viewModel.episodes,
             currentEpisodeId: item.id,
@@ -556,7 +840,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.actors.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Cast & Crew',
+          title: l10n.castAndCrew,
           builder: (_, ctrl) => _CastRow(
             people: viewModel.actors,
             imageApi: viewModel.imageApi,
@@ -568,7 +852,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.similar.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'More Like This',
+          title: l10n.moreLikeThis,
           builder: (_, ctrl) => _SimilarRow(
             items: viewModel.similar,
             imageApi: viewModel.imageApi,
@@ -601,11 +885,12 @@ class _DetailContent extends StatelessWidget {
     AggregatedItem item,
     {String? selectedMediaSourceId,}
   ) {
+    final l10n = AppLocalizations.of(context);
     return [
       if (item.chapters.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Chapters',
+          title: l10n.chapters,
           builder: (_, ctrl) => _ChaptersRow(
             item: item,
             imageApi: viewModel.imageApi,
@@ -623,7 +908,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.features.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Features',
+          title: l10n.features,
           builder: (_, ctrl) => _FeaturesRow(
             items: viewModel.features,
             imageApi: viewModel.imageApi,
@@ -635,7 +920,8 @@ class _DetailContent extends StatelessWidget {
     ];
   }
 
-  List<Widget> _buildPersonContent(AggregatedItem item) {
+  List<Widget> _buildPersonContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     final movies = viewModel.filmographyMovies;
     final series = viewModel.filmographySeries;
 
@@ -648,7 +934,7 @@ class _DetailContent extends StatelessWidget {
       if (movies.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Movies',
+          title: l10n.movies,
           builder: (_, ctrl) => _FilmographyRow(
             items: movies,
             imageApi: viewModel.imageApi,
@@ -660,7 +946,7 @@ class _DetailContent extends StatelessWidget {
       if (series.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Series',
+          title: l10n.series,
           builder: (_, ctrl) => _FilmographyRow(
             items: series,
             imageApi: viewModel.imageApi,
@@ -673,7 +959,8 @@ class _DetailContent extends StatelessWidget {
     ];
   }
 
-  List<Widget> _buildArtistContent(AggregatedItem item) {
+  List<Widget> _buildArtistContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     return [
       _ArtistHeader(item: item, imageApi: viewModel.imageApi),
       if (item.overview != null && item.overview!.isNotEmpty) ...[
@@ -683,7 +970,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.albums.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Discography',
+          title: l10n.discography,
           builder: (_, ctrl) => _AlbumsRow(
             albums: viewModel.albums,
             imageApi: viewModel.imageApi,
@@ -695,7 +982,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.similar.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Similar Artists',
+          title: l10n.similarArtists,
           builder: (_, ctrl) => _SimilarRow(
             items: viewModel.similar,
             imageApi: viewModel.imageApi,
@@ -709,6 +996,8 @@ class _DetailContent extends StatelessWidget {
   }
 
   List<Widget> _buildAlbumContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
+    final isAudiobook = _isAudiobookCollectionItem(item);
     final isPlaylist = item.type == 'Playlist';
     final canManagePlaylistTracks =
         isPlaylist && viewModel.canManagePlaylistTracks;
@@ -716,14 +1005,17 @@ class _DetailContent extends StatelessWidget {
     final canDownloadAll =
       _canUserDownload() &&
       (item.type == 'MusicAlbum' ||
+      item.type == 'AudioBook' ||
       (item.type == 'Playlist' &&
         viewModel.tracks.isNotEmpty &&
         viewModel.tracks.every(_isAudioItem)));
-    final canDeleteDownloaded = item.type == 'MusicAlbum';
+    final canDeleteDownloaded =
+      item.type == 'MusicAlbum' || item.type == 'AudioBook';
     return [
       _AlbumHeader(
         item: item,
         imageApi: viewModel.imageApi,
+        isAudiobook: isAudiobook,
         onRenameRequested:
             isPlaylist ? () => _showRenamePlaylistDialog(context, item) : null,
       ),
@@ -734,7 +1026,12 @@ class _DetailContent extends StatelessWidget {
         showAddToPlaylist: !isPlaylist,
         onDownloadAll:
           canDownloadAll
-            ? () => _downloadTrackList(context, item.name, viewModel.tracks)
+            ? () => _downloadTrackList(
+                context,
+                item.name,
+                viewModel.tracks,
+                itemLabel: isAudiobook ? 'chapters' : 'tracks',
+              )
             : null,
         onDeleteDownloaded:
           canDeleteDownloaded
@@ -745,8 +1042,11 @@ class _DetailContent extends StatelessWidget {
       ),
       if (viewModel.tracks.isNotEmpty) ...[
         const SizedBox(height: 24),
+        _SectionHeader(title: isAudiobook ? l10n.tableOfContents : l10n.tracklist),
+        const SizedBox(height: 12),
         _TrackList(
           tracks: viewModel.tracks,
+          isAudiobook: isAudiobook,
           reorderable: canManagePlaylistTracks,
           onPlayTrack: (index) {
             final manager = GetIt.instance<PlaybackManager>();
@@ -784,19 +1084,24 @@ class _DetailContent extends StatelessWidget {
   void _downloadTrackList(
     BuildContext context,
     String title,
-    List<AggregatedItem> tracks,
+    List<AggregatedItem> tracks, {
+    String itemLabel = 'items',
+  }
   ) {
+    final l10n = AppLocalizations.of(context);
     if (tracks.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('No tracks loaded')));
+      ).showSnackBar(
+        SnackBar(content: Text(l10n.noItemsLoaded(itemLabel))),
+      );
       return;
     }
 
     GetIt.instance<DownloadService>().downloadItems(tracks);
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Downloading $title (${tracks.length} items)...'),
+        content: Text(l10n.downloadingTitle(title, tracks.length)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -806,11 +1111,12 @@ class _DetailContent extends StatelessWidget {
     BuildContext context,
     String title,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final tracks = viewModel.tracks.where(_isAudioItem).toList(growable: false);
     if (tracks.isEmpty) {
       ScaffoldMessenger.of(
         context,
-      ).showSnackBar(const SnackBar(content: Text('No tracks loaded')));
+      ).showSnackBar(SnackBar(content: Text(l10n.noTracksLoaded)));
       return;
     }
 
@@ -819,19 +1125,19 @@ class _DetailContent extends StatelessWidget {
       builder:
           (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF171717),
-            title: const Text(
-              'Delete Downloaded Album',
-              style: TextStyle(color: Colors.white),
+            title: Text(
+              l10n.deleteDownloadedAlbum,
+              style: const TextStyle(color: Colors.white),
             ),
             content: Text(
-              'Delete downloaded tracks for "$title"?',
+              l10n.deleteDownloadedTracksMessage(title),
               style: const TextStyle(color: Colors.white70),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx, false),
                 child: Text(
-                  'Cancel',
+                  l10n.cancel,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
                 ),
               ),
@@ -840,7 +1146,7 @@ class _DetailContent extends StatelessWidget {
                 style: FilledButton.styleFrom(
                   backgroundColor: const Color(0xFFD32F2F),
                 ),
-                child: const Text('Delete'),
+                child: Text(l10n.delete),
               ),
             ],
           ),
@@ -856,8 +1162,8 @@ class _DetailContent extends StatelessWidget {
       SnackBar(
         content: Text(
           success
-              ? 'Downloaded tracks deleted'
-              : 'Some downloaded tracks could not be deleted',
+              ? l10n.downloadedTracksDeleted
+              : l10n.downloadedTracksDeleteFailed,
         ),
       ),
     );
@@ -867,13 +1173,14 @@ class _DetailContent extends StatelessWidget {
     BuildContext context,
     AggregatedItem item,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final isPlaylist = item.type == 'Playlist';
     final confirmed = await _showDeleteConfirmationDialog(
       context,
-      title: isPlaylist ? 'Delete Playlist' : 'Delete Item',
+      title: isPlaylist ? l10n.deletePlaylist : l10n.deleteItem,
       message: isPlaylist
-          ? 'Delete this playlist from the server?'
-          : 'Delete this item from the server?',
+          ? l10n.deletePlaylistMessage
+          : l10n.deleteItemMessage,
     );
     if (!confirmed) return;
 
@@ -889,7 +1196,7 @@ class _DetailContent extends StatelessWidget {
     ).showSnackBar(
       SnackBar(
         content: Text(
-          isPlaylist ? 'Failed to delete playlist' : 'Failed to delete item',
+          isPlaylist ? l10n.failedToDeletePlaylist : l10n.failedToDeleteItem,
         ),
       ),
     );
@@ -899,34 +1206,35 @@ class _DetailContent extends StatelessWidget {
     BuildContext context,
     AggregatedItem item,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final controller = TextEditingController(text: item.name);
     final newName = await showDialog<String>(
       context: context,
       builder:
           (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF171717),
-            title: const Text(
-              'Rename Playlist',
-              style: TextStyle(color: Colors.white),
+            title: Text(
+              l10n.renamePlaylist,
+              style: const TextStyle(color: Colors.white),
             ),
             content: TextField(
               controller: controller,
               autofocus: true,
               style: const TextStyle(color: Colors.white),
-              decoration: const InputDecoration(hintText: 'Playlist name'),
+              decoration: InputDecoration(hintText: l10n.playlistName),
               onSubmitted: (_) => Navigator.pop(ctx, controller.text.trim()),
             ),
             actions: [
               TextButton(
                 onPressed: () => Navigator.pop(ctx),
                 child: Text(
-                  'Cancel',
+                  l10n.cancel,
                   style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
                 ),
               ),
               FilledButton(
                 onPressed: () => Navigator.pop(ctx, controller.text.trim()),
-                child: const Text('Save'),
+                child: Text(l10n.save),
               ),
             ],
           ),
@@ -936,7 +1244,8 @@ class _DetailContent extends StatelessWidget {
     await viewModel.renamePlaylist(newName);
   }
 
-  List<Widget> _buildBoxSetContent(AggregatedItem item) {
+  List<Widget> _buildBoxSetContent(BuildContext context, AggregatedItem item) {
+    final l10n = AppLocalizations.of(context);
     final movies =
         viewModel.collectionItems.where((i) => i.type == 'Movie').toList();
     final series =
@@ -954,7 +1263,7 @@ class _DetailContent extends StatelessWidget {
       if (movies.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Movies',
+          title: l10n.movies,
           builder: (_, ctrl) => _SimilarRow(
             items: movies,
             imageApi: viewModel.imageApi,
@@ -966,7 +1275,7 @@ class _DetailContent extends StatelessWidget {
       if (series.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Series',
+          title: l10n.series,
           builder: (_, ctrl) => _SimilarRow(
             items: series,
             imageApi: viewModel.imageApi,
@@ -978,7 +1287,7 @@ class _DetailContent extends StatelessWidget {
       if (other.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Other',
+          title: l10n.other,
           builder: (_, ctrl) => _SimilarRow(
             items: other,
             imageApi: viewModel.imageApi,
@@ -990,7 +1299,7 @@ class _DetailContent extends StatelessWidget {
       if (viewModel.actors.isNotEmpty) ...[
         const SizedBox(height: 32),
         HorizontalScrollSection(
-          title: 'Cast & Crew',
+          title: l10n.castAndCrew,
           builder: (_, ctrl) => _CastRow(
             people: viewModel.actors,
             imageApi: viewModel.imageApi,
@@ -1372,14 +1681,14 @@ class _DownloadedBadgeState extends State<_DownloadedBadge> {
           color: const Color(0xFF4CAF50),
           borderRadius: BorderRadius.circular(4),
         ),
-        child: const Row(
+        child: Row(
           mainAxisSize: MainAxisSize.min,
           children: [
-            Icon(Icons.download_done, color: Colors.white, size: 12),
-            SizedBox(width: 3),
+            const Icon(Icons.download_done, color: Colors.white, size: 12),
+            const SizedBox(width: 3),
             Text(
-              'Downloaded',
-              style: TextStyle(
+              AppLocalizations.of(context).downloaded,
+              style: const TextStyle(
                 color: Colors.white,
                 fontSize: 11,
                 fontWeight: FontWeight.w600,
@@ -1405,7 +1714,6 @@ class _PosterImage extends StatelessWidget {
     final isMobile = !_useDesktopDetailLayout(context);
     final w = isMobile ? 120.0 : 165.0;
     final h = isMobile ? 180.0 : 248.0;
-    final isBook = _isReadableBookItem(item);
 
     if (item.primaryImageTag == null) return SizedBox(width: w, height: h);
 
@@ -1445,7 +1753,7 @@ class _PosterImage extends StatelessWidget {
                 ),
               ),
             ),
-          if (!isBook && item.isPlayed)
+          if (item.isPlayed)
             Positioned(
               top: 6,
               right: 6,
@@ -1460,7 +1768,7 @@ class _PosterImage extends StatelessWidget {
                 ),
               ),
             ),
-          if (!isBook && (item.playedPercentage ?? 0) > 0)
+          if ((item.playedPercentage ?? 0) > 0)
             Positioned(
               left: 0,
               right: 0,
@@ -1588,7 +1896,6 @@ class _MetadataRow extends StatelessWidget {
   Widget build(BuildContext context) {
     final parts = <Widget>[];
     final theme = Theme.of(context);
-    final isBook = _isReadableBookItem(item);
 
     if (item.productionYear != null) {
       parts.add(_text(theme, item.productionYear.toString()));
@@ -1599,7 +1906,7 @@ class _MetadataRow extends StatelessWidget {
     }
 
     final runtime = _runtimeForItem(item, selectedMediaSource);
-    if (!isBook && runtime != null && item.type != 'Series') {
+    if (runtime != null && item.type != 'Series') {
       final h = runtime.inHours;
       final m = runtime.inMinutes.remainder(60);
       parts.add(_text(theme, h > 0 ? '${h}h ${m}m' : '${m}m'));
@@ -1608,11 +1915,11 @@ class _MetadataRow extends StatelessWidget {
     if (item.type == 'Series') {
       final count = item.childCount;
       if (count != null) {
-        parts.add(_text(theme, count == 1 ? '1 Season' : '$count Seasons'));
+        parts.add(_text(theme, AppLocalizations.of(context).seasonCount(count)));
       }
       final status = item.status;
       if (status != null) {
-        parts.add(_statusBadge(theme, status));
+        parts.add(_statusBadge(context, theme, status));
       }
     }
 
@@ -1620,8 +1927,8 @@ class _MetadataRow extends StatelessWidget {
       UserPreferences.use24HourClock,
     );
     final endsAt = _endsAt(item, runtime, use24Hour: use24);
-    if (!isBook && endsAt != null && item.type != 'Series') {
-      parts.add(_text(theme, 'Ends at $endsAt'));
+    if (endsAt != null && item.type != 'Series') {
+      parts.add(_text(theme, AppLocalizations.of(context).endsAt(endsAt)));
     }
 
     if (item.genres.isNotEmpty) {
@@ -1654,7 +1961,8 @@ class _MetadataRow extends StatelessWidget {
     if (hdr != null) badges.add(hdr);
     final vcodec = _codecFromStreams(streams, 'Video') ?? item.videoCodec?.toUpperCase();
     if (vcodec != null) badges.add(vcodec);
-    final acodec = _codecFromStreams(streams, 'Audio') ?? item.audioCodec?.toUpperCase();
+    final acodec = _audioLabelFromStreams(streams) ??
+      audioLabelFromProfileCodec(item.audioProfile, item.audioCodec);
     if (acodec != null) badges.add(acodec);
     final layout = _channelLayoutFromStreams(streams) ?? item.channelLayout;
     if (layout != null) badges.add(layout);
@@ -1726,7 +2034,7 @@ class _MetadataRow extends StatelessWidget {
     );
   }
 
-  Widget _statusBadge(ThemeData theme, String status) {
+  Widget _statusBadge(BuildContext context, ThemeData theme, String status) {
     final isEnded = status.toLowerCase() == 'ended';
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
@@ -1735,7 +2043,7 @@ class _MetadataRow extends StatelessWidget {
         borderRadius: BorderRadius.circular(4),
       ),
       child: Text(
-        isEnded ? 'Ended' : 'Continuing',
+        isEnded ? AppLocalizations.of(context).ended : AppLocalizations.of(context).continuing,
         style: theme.textTheme.labelSmall?.copyWith(
           color: Colors.white,
           fontWeight: FontWeight.w600,
@@ -1775,6 +2083,685 @@ class _ActionButtons extends StatefulWidget {
 
   @override
   State<_ActionButtons> createState() => _ActionButtonsState();
+}
+
+class _BookAuthorDetailScreen extends StatefulWidget {
+  final String authorName;
+  final String? authorPersonId;
+  final String? serverId;
+
+  const _BookAuthorDetailScreen({
+    required this.authorName,
+    this.authorPersonId,
+    this.serverId,
+  });
+
+  @override
+  State<_BookAuthorDetailScreen> createState() => _BookAuthorDetailScreenState();
+}
+
+class _BookAuthorDetailScreenState extends State<_BookAuthorDetailScreen> {
+  _BookAuthorDetailData? _data;
+  bool _loading = true;
+
+  @override
+  void initState() {
+    super.initState();
+    _loadData();
+  }
+
+  Future<void> _loadData() async {
+    final client = _resolveClient();
+    final libraryBooks = await _loadLibraryBooks(client);
+    if (!mounted) return;
+
+    final books = _dedupeAuthorBooks(libraryBooks);
+    books.sort((a, b) {
+      final ay = a.year ?? -1;
+      final by = b.year ?? -1;
+      return by.compareTo(ay);
+    });
+    final profile = await _loadAuthorProfile(client, books);
+
+    setState(() {
+      _data = _BookAuthorDetailData(
+        authorName: widget.authorName,
+        biography: profile.biography,
+        photoUrl: profile.photoUrl,
+        books: books,
+      );
+      _loading = false;
+    });
+  }
+
+  MediaServerClient _resolveClient() {
+    final clientFactory = GetIt.instance<MediaServerClientFactory>();
+    final defaultClient = GetIt.instance<MediaServerClient>();
+    return widget.serverId != null
+        ? clientFactory.getClientIfExists(widget.serverId!) ?? defaultClient
+        : defaultClient;
+  }
+
+  Future<List<_AuthorBookEntry>> _loadLibraryBooks(MediaServerClient client) async {
+
+    try {
+      final itemsApi = client.itemsApi;
+      final rawItems = await _fetchBookItemsFromServer(itemsApi);
+
+      final mapped = rawItems
+          .map(
+            (raw) => AggregatedItem(
+              id: raw['Id'] as String,
+              serverId: widget.serverId ?? client.baseUrl,
+              rawData: raw,
+            ),
+          )
+          .toList();
+
+      final filtered =
+          widget.authorPersonId != null && widget.authorPersonId!.trim().isNotEmpty
+              ? mapped
+              : mapped.where((item) => _bookMatchesAuthor(item)).toList();
+
+      return _dedupeAuthorBooks(
+        filtered
+          .map((item) => _AuthorBookEntry.fromLibraryItem(item, client.imageApi))
+          .toList(),
+      );
+    } catch (_) {
+      return const [];
+    }
+  }
+
+  Future<({String? biography, String? photoUrl})> _loadAuthorProfile(
+    MediaServerClient client,
+    List<_AuthorBookEntry> books,
+  ) async {
+    String? biography;
+    String? photoUrl;
+
+    if (widget.authorPersonId != null && widget.authorPersonId!.trim().isNotEmpty) {
+      try {
+        final personId = widget.authorPersonId!.trim();
+        final person = await client.itemsApi.getItem(personId);
+        final overview = (person['Overview'] as String?)?.trim();
+        if (overview != null && overview.isNotEmpty) {
+          biography = overview;
+        }
+
+        final imageTag = (person['PrimaryImageTag'] as String?)?.trim();
+        photoUrl = client.imageApi.getPrimaryImageUrl(
+          personId,
+          tag: imageTag != null && imageTag.isNotEmpty ? imageTag : null,
+          maxHeight: 300,
+        );
+      } catch (_) {}
+    }
+
+    if (photoUrl?.isEmpty ?? true) {
+      try {
+        final peopleData = await client.itemsApi.getItems(
+          includeItemTypes: const ['Person'],
+          recursive: true,
+          searchTerm: widget.authorName,
+          limit: 12,
+        );
+        final items = (peopleData['Items'] as List?)
+                ?.whereType<Map>()
+                .map((m) => m.cast<String, dynamic>())
+                .toList() ??
+            const <Map<String, dynamic>>[];
+
+        final target = widget.authorName.trim().toLowerCase();
+        final person = items.firstWhere(
+          (item) => ((item['Name'] as String?) ?? '').trim().toLowerCase() == target,
+          orElse: () => items.isNotEmpty ? items.first : const <String, dynamic>{},
+        );
+        final personId = (person['Id'] as String?)?.trim();
+        if (personId != null && personId.isNotEmpty) {
+          final imageTag = (person['PrimaryImageTag'] as String?)?.trim();
+          photoUrl = client.imageApi.getPrimaryImageUrl(
+            personId,
+            tag: imageTag != null && imageTag.isNotEmpty ? imageTag : null,
+            maxHeight: 300,
+          );
+        }
+      } catch (_) {}
+    }
+
+    if (biography == null || biography.isEmpty) {
+      for (final book in books) {
+        final overview = book.overview?.trim();
+        if (overview != null && overview.isNotEmpty) {
+          biography = overview;
+          break;
+        }
+      }
+    }
+
+    return (biography: biography, photoUrl: photoUrl);
+  }
+
+  Future<List<Map<String, dynamic>>> _fetchBookItemsFromServer(
+    ItemsApi itemsApi,
+  ) async {
+    final books = <Map<String, dynamic>>[];
+    var startIndex = 0;
+    const pageSize = 200;
+    const maxItems = 2000;
+
+    while (books.length < maxItems) {
+      final data = await itemsApi.getItems(
+        includeItemTypes: const ['Book'],
+        recursive: true,
+        sortBy: 'ProductionYear,SortName',
+        sortOrder: 'Descending',
+        startIndex: startIndex,
+        limit: pageSize,
+        searchTerm:
+          widget.authorPersonId == null || widget.authorPersonId!.trim().isEmpty
+            ? widget.authorName
+            : null,
+        personIds:
+            widget.authorPersonId != null && widget.authorPersonId!.trim().isNotEmpty
+                ? [widget.authorPersonId!.trim()]
+                : null,
+        enableTotalRecordCount: true,
+      );
+
+      final pageItems = (data['Items'] as List?)
+              ?.whereType<Map>()
+              .map((m) => m.cast<String, dynamic>())
+              .toList() ??
+          const <Map<String, dynamic>>[];
+      if (pageItems.isEmpty) {
+        break;
+      }
+
+      books.addAll(pageItems);
+      startIndex += pageItems.length;
+
+      final total = (data['TotalRecordCount'] as num?)?.toInt();
+      if (pageItems.length < pageSize) break;
+      if (total != null && startIndex >= total) break;
+    }
+
+    return books;
+  }
+
+  bool _bookMatchesAuthor(AggregatedItem item) {
+    final target = widget.authorName.trim().toLowerCase();
+    if (target.isEmpty) return false;
+
+    final direct = (item.rawData['Author'] as String?)?.trim().toLowerCase();
+    if (direct == target) return true;
+
+    final authors = (item.rawData['Authors'] as List?)
+            ?.whereType<String>()
+            .map((name) => name.trim().toLowerCase())
+            .toList() ??
+        const <String>[];
+    if (authors.any((name) => name == target)) {
+      return true;
+    }
+
+    final peopleAuthor = item.people.any((person) {
+      final type = (person['Type'] as String?)?.toLowerCase();
+      if (type != 'author' && type != 'writer') return false;
+      final name = (person['Name'] as String?)?.trim().toLowerCase();
+      return name == target;
+    });
+    if (peopleAuthor) return true;
+
+    return item.artists.map((a) => a.trim().toLowerCase()).contains(target);
+  }
+
+  String _bookIdentity(_AuthorBookEntry book) {
+    final canonicalTitle = _canonicalBookTitle(book.title);
+    final yearBucket = book.year != null ? (book.year! ~/ 5).toString() : 'unknown';
+    return 'title:$canonicalTitle|year:$yearBucket';
+  }
+
+  List<_AuthorBookEntry> _dedupeAuthorBooks(List<_AuthorBookEntry> books) {
+    final deduped = <String, _AuthorBookEntry>{};
+    for (final book in books) {
+      final key = _bookIdentity(book);
+      final existing = deduped[key];
+      deduped[key] = existing == null ? book : _preferAuthorBook(existing, book);
+    }
+    return deduped.values.toList();
+  }
+
+  _AuthorBookEntry _preferAuthorBook(_AuthorBookEntry left, _AuthorBookEntry right) {
+    final leftScore = _authorBookScore(left);
+    final rightScore = _authorBookScore(right);
+    if (rightScore > leftScore) return right;
+    return left;
+  }
+
+  int _authorBookScore(_AuthorBookEntry book) {
+    var score = 0;
+    if (book.inLibrary) score += 100;
+    if (book.coverUrl != null && book.coverUrl!.isNotEmpty) score += 10;
+    if (book.year != null) score += 1;
+    return score;
+  }
+
+  String _canonicalBookTitle(String title) {
+    var value = title.toLowerCase().trim();
+    value = value.replaceAll(RegExp(r'\[[^\]]*\]|\([^\)]*\)'), ' ');
+    value = value.replaceAll(RegExp(r'[:\-–].*$'), ' ');
+    value = value.replaceAll(RegExp(r'\b(a|an|the)\b'), ' ');
+    value = value.replaceAll(RegExp(r'[^a-z0-9]+'), '');
+    return value;
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final horizontalPadding = _isCompact(context) ? 16.0 : 48.0;
+    final width = MediaQuery.sizeOf(context).width;
+    final crossAxisCount =
+      width >= 1500 ? 7 : width >= 1200 ? 6 : width >= 900 ? 5 : width >= 700 ? 4 : 3;
+    const gridSpacing = 10.0;
+    final data = _data;
+
+    return Scaffold(
+      backgroundColor: const Color(0xFF0F182A),
+      appBar: AppBar(
+        backgroundColor: Colors.transparent,
+        elevation: 0,
+        title: Text(AppLocalizations.of(context).authorDetails),
+      ),
+      body: SafeArea(
+        child:
+            _loading && data == null
+                ? const Center(
+                  child: CircularProgressIndicator(color: Color(0xFF32B9E8)),
+                )
+                : data == null
+                ? Center(
+                  child: Text(
+                    AppLocalizations.of(context).unableToLoadAuthorDetails,
+                    style: const TextStyle(color: Color(0xFFD7E8F6)),
+                  ),
+                )
+                : SingleChildScrollView(
+                  padding: EdgeInsets.fromLTRB(horizontalPadding, 8, horizontalPadding, 24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      _AuthorHeader(name: data.authorName, photoUrl: data.photoUrl),
+                      const SizedBox(height: 20),
+                      _SectionHeader(title: AppLocalizations.of(context).biography),
+                      const SizedBox(height: 8),
+                      if (data.biography != null && data.biography!.trim().isNotEmpty)
+                        _ExpandableBiography(text: data.biography!)
+                      else
+                        Text(
+                          AppLocalizations.of(context).noBiographyAvailable,
+                          style: const TextStyle(
+                            color: Color(0xFFD7E8F6),
+                            fontSize: 14,
+                            height: 1.5,
+                          ),
+                        ),
+                      const SizedBox(height: 28),
+                      _SectionHeader(title: AppLocalizations.of(context).books),
+                      const SizedBox(height: 8),
+                      if (data.books.isEmpty)
+                        Text(
+                          AppLocalizations.of(context).noBooksFound,
+                          style: const TextStyle(
+                            color: Color(0xFFD7E8F6),
+                            fontSize: 14,
+                            height: 1.5,
+                          ),
+                        )
+                      else
+                        GridView.builder(
+                          shrinkWrap: true,
+                          physics: const NeverScrollableScrollPhysics(),
+                          itemCount: data.books.length,
+                          gridDelegate: SliverGridDelegateWithFixedCrossAxisCount(
+                            crossAxisCount: crossAxisCount,
+                            mainAxisSpacing: gridSpacing,
+                            crossAxisSpacing: gridSpacing,
+                            childAspectRatio: 0.72,
+                          ),
+                          itemBuilder: (context, index) {
+                            final book = data.books[index];
+                            return _AuthorBookTile(
+                              book: book,
+                              onTap:
+                                  book.inLibrary && book.itemId != null
+                                      ? () => context.push(
+                                        Destinations.item(
+                                          book.itemId!,
+                                          serverId: widget.serverId,
+                                        ),
+                                      )
+                                      : null,
+                            );
+                          },
+                        ),
+                      const SizedBox(height: 24),
+                    ],
+                  ),
+                ),
+      ),
+    );
+  }
+}
+
+class _AuthorHeader extends StatelessWidget {
+  final String name;
+  final String? photoUrl;
+
+  const _AuthorHeader({required this.name, this.photoUrl});
+
+  @override
+  Widget build(BuildContext context) {
+    return Row(
+      crossAxisAlignment: CrossAxisAlignment.center,
+      children: [
+        CircleAvatar(
+          radius: 42,
+          backgroundColor: const Color(0xFF1E3A5F),
+          child: ClipOval(
+            child: SizedBox(
+              width: 84,
+              height: 84,
+              child: photoUrl == null
+                  ? const Icon(
+                      Icons.person,
+                      size: 36,
+                      color: Color(0xFFE4F0FA),
+                    )
+                  : CachedNetworkImage(
+                      imageUrl: photoUrl!,
+                      fit: BoxFit.cover,
+                      errorWidget: (_, __, ___) => const Icon(
+                        Icons.person,
+                        size: 36,
+                        color: Color(0xFFE4F0FA),
+                      ),
+                    ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Text(
+            name,
+            style: const TextStyle(
+              color: Colors.white,
+              fontSize: 26,
+              fontWeight: FontWeight.w700,
+              height: 1.1,
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
+class _AuthorBookTile extends StatelessWidget {
+  final _AuthorBookEntry book;
+  final VoidCallback? onTap;
+
+  const _AuthorBookTile({required this.book, this.onTap});
+
+  @override
+  Widget build(BuildContext context) {
+    final content = Column(
+      mainAxisSize: MainAxisSize.max,
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Expanded(
+          flex: 8,
+          child: Stack(
+            fit: StackFit.expand,
+            children: [
+              ClipRRect(
+                borderRadius: BorderRadius.circular(12),
+                child: Container(
+                  color: const Color(0xFF2C77B7),
+                  child: book.coverUrl == null
+                      ? const Center(
+                          child: Icon(
+                            Icons.auto_stories_rounded,
+                            color: Colors.white,
+                            size: 28,
+                          ),
+                        )
+                      : CachedNetworkImage(
+                          imageUrl: book.coverUrl!,
+                          fit: BoxFit.contain,
+                          alignment: Alignment.center,
+                          errorWidget: (_, __, ___) => Container(
+                            color: const Color(0xFF2C77B7),
+                            alignment: Alignment.center,
+                            child: const Icon(
+                              Icons.auto_stories_rounded,
+                              color: Colors.white,
+                              size: 28,
+                            ),
+                          ),
+                        ),
+                ),
+              ),
+              if (book.inLibrary)
+                const Positioned(
+                  top: 6,
+                  right: 6,
+                  child: CircleAvatar(
+                    radius: 12,
+                    backgroundColor: Color(0xFF2FA74B),
+                    child: Icon(Icons.check, size: 15, color: Colors.white),
+                  ),
+                ),
+            ],
+          ),
+        ),
+        Expanded(
+          flex: 3,
+          child: Padding(
+            padding: const EdgeInsets.only(left: 4, top: 10),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _CardMarqueeText(
+                  book.title,
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    height: 1.2,
+                  ),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  book.year != null
+                      ? AppLocalizations.of(context).published(book.year!)
+                      : AppLocalizations.of(context).publicationDateUnknown,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(
+                    color: Color(0xFFB9D4E8),
+                    fontSize: 12,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      ],
+    );
+
+    if (onTap == null) {
+      return content;
+    }
+    return InkWell(
+      onTap: onTap,
+      borderRadius: BorderRadius.circular(12),
+      child: content,
+    );
+  }
+}
+
+class _CardMarqueeText extends StatefulWidget {
+  final String text;
+  final TextStyle style;
+
+  const _CardMarqueeText(this.text, {required this.style});
+
+  @override
+  State<_CardMarqueeText> createState() => _CardMarqueeTextState();
+}
+
+class _CardMarqueeTextState extends State<_CardMarqueeText>
+    with SingleTickerProviderStateMixin {
+  late final ScrollController _controller;
+  late final AnimationController _animation;
+  bool _started = false;
+  bool _hovered = false;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = ScrollController();
+    _animation = AnimationController(vsync: this);
+    WidgetsBinding.instance.addPostFrameCallback((_) => _startIfNeeded());
+  }
+
+  void _startIfNeeded() {
+    if (!mounted || !_controller.hasClients || _started || !_hovered) return;
+    final maxScroll = _controller.position.maxScrollExtent;
+    if (maxScroll <= 0) return;
+
+    _started = true;
+    _animation.duration = Duration(
+      milliseconds: (maxScroll * 34).round().clamp(1800, 8000),
+    );
+    _animation.addListener(_onTick);
+    _animation.repeat(reverse: true);
+  }
+
+  void _onTick() {
+    if (!_controller.hasClients) return;
+    _controller.jumpTo(_animation.value * _controller.position.maxScrollExtent);
+  }
+
+  void _stopScroll() {
+    _started = false;
+    _animation.removeListener(_onTick);
+    _animation.stop();
+    if (_controller.hasClients) {
+      _controller.jumpTo(0);
+    }
+  }
+
+  @override
+  void didUpdateWidget(covariant _CardMarqueeText oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.text != widget.text) {
+      _stopScroll();
+      WidgetsBinding.instance.addPostFrameCallback((_) => _startIfNeeded());
+    }
+  }
+
+  @override
+  void dispose() {
+    _stopScroll();
+    _animation.dispose();
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return MouseRegion(
+      onEnter: (_) {
+        _hovered = true;
+        WidgetsBinding.instance.addPostFrameCallback((_) => _startIfNeeded());
+      },
+      onExit: (_) {
+        _hovered = false;
+        _stopScroll();
+      },
+      child: SizedBox(
+        height: 20,
+        child: SingleChildScrollView(
+          controller: _controller,
+          scrollDirection: Axis.horizontal,
+          physics: const NeverScrollableScrollPhysics(),
+          child: Text(
+            widget.text,
+            maxLines: 1,
+            overflow: _hovered ? TextOverflow.visible : TextOverflow.ellipsis,
+            style: widget.style,
+          ),
+        ),
+      ),
+    );
+  }
+}
+
+class _BookAuthorDetailData {
+  final String authorName;
+  final String? biography;
+  final String? photoUrl;
+  final List<_AuthorBookEntry> books;
+
+  const _BookAuthorDetailData({
+    required this.authorName,
+    required this.biography,
+    required this.photoUrl,
+    required this.books,
+  });
+}
+
+class _AuthorBookEntry {
+  final String title;
+  final int? year;
+  final String? overview;
+  final String? coverUrl;
+  final String? sourceKey;
+  final bool inLibrary;
+  final String? itemId;
+
+  const _AuthorBookEntry({
+    required this.title,
+    required this.year,
+    required this.overview,
+    required this.coverUrl,
+    required this.sourceKey,
+    required this.inLibrary,
+    required this.itemId,
+  });
+
+  factory _AuthorBookEntry.fromLibraryItem(
+    AggregatedItem item,
+    ImageApi imageApi,
+  ) {
+    final tag = item.primaryImageTag;
+    final coverUrl =
+        tag == null
+            ? null
+            : imageApi.getPrimaryImageUrl(item.id, maxHeight: 300, tag: tag);
+
+    return _AuthorBookEntry(
+      title: item.name,
+      year: item.productionYear,
+      overview: item.overview,
+      coverUrl: coverUrl,
+      sourceKey: item.providerIds['OpenLibrary'],
+      inLibrary: true,
+      itemId: item.id,
+    );
+  }
 }
 
 class _ActionButtonsState extends State<_ActionButtons> {
@@ -1870,17 +2857,18 @@ class _ActionButtonsState extends State<_ActionButtons> {
     final mediaStreams = _mediaStreamsForItem(item, selectedSource);
     final audioStreams = mediaStreams.where((s) => s['Type'] == 'Audio').toList();
     final subtitleStreams = mediaStreams.where((s) => s['Type'] == 'Subtitle').toList();
+    final l10n = AppLocalizations.of(context);
 
     final allButtons = <Widget>[
       _DetailActionButton(
         label:
             isPhoto
-                ? 'View'
+                ? l10n.view
                 : isBook
-                ? (hasProgress ? 'Resume Reading' : 'Read')
+                ? (hasProgress ? l10n.resumeReading : l10n.read)
                 : hasProgress
-                ? 'Resume from ${_formatResumePosition(item.playbackPosition)}'
-                : 'Play',
+                ? l10n.resumeFrom(_formatResumePosition(item.playbackPosition))
+                : l10n.play,
         icon:
             isPhoto
                 ? Icons.photo
@@ -1891,15 +2879,15 @@ class _ActionButtonsState extends State<_ActionButtons> {
       ),
       if (hasProgress && !isPhoto)
         _DetailActionButton(
-          label: isBook ? 'Start Over' : 'Restart',
+          label: isBook ? l10n.startOver : l10n.restart,
           icon: Icons.restart_alt,
           onPressed: () => _play(context, item),
         ),
       if (_offlineRow != null)
         _DetailActionButton(
           label: isBook
-              ? 'Read Offline'
-              : 'Play Offline',
+              ? l10n.readOffline
+              : l10n.playOffline,
           icon: isBook ? Icons.menu_book : Icons.offline_pin,
           onPressed: () async {
             if (context.mounted) {
@@ -1921,13 +2909,13 @@ class _ActionButtonsState extends State<_ActionButtons> {
         ),
       if (audioStreams.length > 1)
         _DetailActionButton(
-          label: 'Audio',
+          label: l10n.audio,
           icon: Icons.audiotrack,
           onPressed: () => _showAudioSelector(context, audioStreams),
         ),
       if (subtitleStreams.isNotEmpty || _canDownloadRemoteSubtitles(item))
         _DetailActionButton(
-          label: 'Subtitles',
+          label: l10n.subtitles,
           icon: Icons.subtitles,
           onPressed:
               () => _showSubtitleSelector(
@@ -1939,7 +2927,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         ),
       if (item.mediaSources.length > 1)
         _DetailActionButton(
-          label: 'Version',
+          label: l10n.version,
           icon: Icons.video_file,
           onPressed: () => _showVersionSelector(context, item.mediaSources),
           isActive: widget.selectedMediaSourceId != null,
@@ -1947,26 +2935,27 @@ class _ActionButtonsState extends State<_ActionButtons> {
         ),
       if (!isBook)
         _DetailActionButton(
-          label: 'Cast',
+          label: l10n.cast,
           icon: Icons.cast,
           onPressed: () => _castToDevice(context, item),
         ),
       if (_hasTrailer(item))
         _DetailActionButton(
-          label: 'Trailer',
+          label: l10n.trailer,
           icon: Icons.movie_outlined,
           onPressed: () => _playTrailer(context, item),
         ),
-      if (!isBook)
-        _DetailActionButton(
-          label: item.isPlayed ? 'Watched' : 'Unwatched',
+      _DetailActionButton(
+          label: isBook
+              ? (item.isPlayed ? l10n.finished : l10n.unread)
+              : (item.isPlayed ? l10n.watched : l10n.unwatched),
           icon: item.isPlayed ? Icons.check_circle : Icons.check_circle_outline,
           onPressed: viewModel.togglePlayed,
           isActive: item.isPlayed,
           activeColor: const Color(0xFF00A4DC),
         ),
       _DetailActionButton(
-        label: item.isFavorite ? 'Favorited' : 'Favorite',
+        label: item.isFavorite ? l10n.favorited : l10n.favorite,
         icon: Icons.favorite,
         onPressed: viewModel.toggleFavorite,
         isActive: item.isFavorite,
@@ -1974,7 +2963,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
       ),
       if (!isBook)
         _DetailActionButton(
-          label: 'Playlist',
+          label: l10n.playlist,
           icon: Icons.playlist_add,
           onPressed:
               () => AddToPlaylistDialog.show(context, itemIds: [item.id]),
@@ -1984,7 +2973,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
       if (_isDownloadable(item.type) && _canUserDownload()) _DeleteDownloadButton(item: item),
       if (item.canDelete)
         _DetailActionButton(
-          label: 'Delete',
+          label: l10n.delete,
           icon: Icons.delete_outline,
           onPressed: () => _confirmDeleteItem(context, item),
           isActive: true,
@@ -1992,7 +2981,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         ),
       if (item.type == 'Episode' && item.seriesId != null)
         _DetailActionButton(
-          label: 'Go to Series',
+          label: l10n.goToSeries,
           icon: Icons.tv,
           onPressed:
               () => context.push(
@@ -2003,7 +2992,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
               false) &&
           GetIt.instance<MediaServerClient>().serverType == ServerType.jellyfin)
         _DetailActionButton(
-          label: 'Edit Metadata',
+          label: l10n.editMetadata,
           icon: Icons.edit_note,
           onPressed: () => context.push(Destinations.adminMetadata(item.id)),
         ),
@@ -2038,7 +3027,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
             children: [
               ...primaryButtons,
               _DetailActionButton(
-                label: _expanded ? 'Less' : 'More',
+                label: _expanded ? l10n.less : l10n.more,
                 icon: _expanded ? Icons.expand_less : Icons.expand_more,
                 onPressed: () => setState(() => _expanded = !_expanded),
               ),
@@ -2070,11 +3059,11 @@ class _ActionButtonsState extends State<_ActionButtons> {
     BuildContext context,
     AggregatedItem item,
   ) async {
+    final l10n = AppLocalizations.of(context);
     final confirmed = await _showDeleteConfirmationDialog(
       context,
-      title: 'Delete Item',
-      message:
-          'Are you sure you want to delete "${item.name}" from the server? This action cannot be undone.',
+      title: l10n.deleteItem,
+      message: l10n.deleteConfirmMessage(item.name),
     );
     if (!confirmed) return;
 
@@ -2086,7 +3075,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         context.pop(true);
       } else {
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Item deleted')),
+          SnackBar(content: Text(l10n.itemDeleted)),
         );
       }
       return;
@@ -2094,17 +3083,75 @@ class _ActionButtonsState extends State<_ActionButtons> {
 
     ScaffoldMessenger.of(
       context,
-    ).showSnackBar(const SnackBar(content: Text('Failed to delete item')));
+    ).showSnackBar(SnackBar(content: Text(l10n.failedToDeleteItem)));
   }
 
-  int? _effectiveSubtitleStreamIndex() {
+  int? _effectiveAudioStreamIndex(List<Map<String, dynamic>> audioStreams) {
+    if (_selectedAudioIndex != null) {
+      return _selectedAudioIndex;
+    }
+
+    final prefs = GetIt.instance<UserPreferences>();
+    final preferred = prefs
+        .get(UserPreferences.defaultAudioLanguage)
+        .trim();
+    if (preferred.isEmpty) {
+      return null;
+    }
+
+    final preferredNormalized = _normalizeLanguage(preferred);
+    final preferredIso3 = _toIso3(preferredNormalized);
+
+    for (final stream in audioStreams) {
+      if (_languageMatchesPreferred(
+        (stream['Language'] as String?)?.trim(),
+        preferredNormalized,
+        preferredIso3,
+      )) {
+        return stream['Index'] as int?;
+      }
+    }
+
+    return null;
+  }
+
+  int? _effectiveSubtitleStreamIndex(List<Map<String, dynamic>> subtitleStreams) {
     if (_selectedSubtitleIndex != null) {
       return _selectedSubtitleIndex;
     }
-    final defaultToNone = GetIt.instance<UserPreferences>().get(
+    final prefs = GetIt.instance<UserPreferences>();
+    final defaultToNone = prefs.get(
       UserPreferences.subtitlesDefaultToNone,
     );
-    return defaultToNone ? -1 : null;
+    if (defaultToNone) {
+      return -1;
+    }
+
+    final preferred = prefs
+        .get(UserPreferences.defaultSubtitleLanguage)
+        .trim();
+    if (preferred.isEmpty) {
+      return null;
+    }
+
+    final preferredNormalized = _normalizeLanguage(preferred);
+    final preferredIso3 = _toIso3(preferredNormalized);
+
+    for (final stream in subtitleStreams) {
+      if (_languageMatchesPreferred(
+        (stream['Language'] as String?)?.trim(),
+        preferredNormalized,
+        preferredIso3,
+      )) {
+        return stream['Index'] as int?;
+      }
+    }
+
+    if (subtitleStreams.length == 1) {
+      return subtitleStreams.first['Index'] as int?;
+    }
+
+    return null;
   }
 
   void _play(
@@ -2113,7 +3160,14 @@ class _ActionButtonsState extends State<_ActionButtons> {
     bool resume = false,
   }) async {
     final manager = GetIt.instance<PlaybackManager>();
-    final subtitleStreamIndex = _effectiveSubtitleStreamIndex();
+    final mediaStreams = _mediaStreamsForCurrentSelection(item);
+    final audioStreams =
+      mediaStreams.where((s) => s['Type'] == 'Audio').toList();
+    final subtitleStreams =
+      mediaStreams.where((s) => s['Type'] == 'Subtitle').toList();
+    final audioStreamIndex = _effectiveAudioStreamIndex(audioStreams);
+    final subtitleStreamIndex =
+      _effectiveSubtitleStreamIndex(subtitleStreams);
 
     if (item.type == 'Photo') {
       await context.push(Destinations.photo(item.id));
@@ -2126,7 +3180,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           !BookReaderService.isSupportedExtension(extension)) {
         if (mounted) {
           ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Unsupported book format: .$extension')),
+            SnackBar(content: Text(AppLocalizations.of(context).unsupportedBookFormat(extension))),
           );
         }
         return;
@@ -2153,7 +3207,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         manager.playItems(
           [nextUp],
           startPosition: startPosition,
-          audioStreamIndex: _selectedAudioIndex,
+          audioStreamIndex: audioStreamIndex,
           subtitleStreamIndex: subtitleStreamIndex,
         );
 
@@ -2175,7 +3229,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
           episodes,
           startIndex: idx,
           startPosition: startPosition,
-          audioStreamIndex: _selectedAudioIndex,
+          audioStreamIndex: audioStreamIndex,
           subtitleStreamIndex: subtitleStreamIndex,
         );
 
@@ -2192,7 +3246,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
             episodes,
             startIndex: idx,
             startPosition: startPosition,
-            audioStreamIndex: _selectedAudioIndex,
+            audioStreamIndex: audioStreamIndex,
             subtitleStreamIndex: subtitleStreamIndex,
             mediaSourceId: widget.selectedMediaSourceId,
           );
@@ -2212,7 +3266,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         manager.playItems(
           [item],
           startPosition: startPosition,
-          audioStreamIndex: _selectedAudioIndex,
+          audioStreamIndex: audioStreamIndex,
           subtitleStreamIndex: subtitleStreamIndex,
           mediaSourceId: widget.selectedMediaSourceId,
         );
@@ -2225,7 +3279,14 @@ class _ActionButtonsState extends State<_ActionButtons> {
   }
 
   Future<void> _castToDevice(BuildContext context, AggregatedItem item) {
-    final subtitleStreamIndex = _effectiveSubtitleStreamIndex();
+    final mediaStreams = _mediaStreamsForCurrentSelection(item);
+    final audioStreams =
+        mediaStreams.where((s) => s['Type'] == 'Audio').toList();
+    final subtitleStreams =
+        mediaStreams.where((s) => s['Type'] == 'Subtitle').toList();
+    final audioStreamIndex = _effectiveAudioStreamIndex(audioStreams);
+    final subtitleStreamIndex =
+        _effectiveSubtitleStreamIndex(subtitleStreams);
     final positionTicks =
         item.playbackPosition == null
             ? null
@@ -2235,9 +3296,73 @@ class _ActionButtonsState extends State<_ActionButtons> {
       item: item,
       startPositionTicks: positionTicks,
       mediaSourceId: widget.selectedMediaSourceId,
-      audioStreamIndex: _selectedAudioIndex,
+      audioStreamIndex: audioStreamIndex,
       subtitleStreamIndex: subtitleStreamIndex,
     );
+  }
+
+  List<Map<String, dynamic>> _mediaStreamsForCurrentSelection(
+    AggregatedItem item,
+  ) {
+    final selectedSource =
+        _selectedMediaSourceForItem(item, widget.selectedMediaSourceId);
+    return _mediaStreamsForItem(item, selectedSource);
+  }
+
+  static const Map<String, String> _lang2To3 = {
+    'en': 'eng',
+    'es': 'spa',
+    'fr': 'fra',
+    'de': 'deu',
+    'it': 'ita',
+    'pt': 'por',
+    'ja': 'jpn',
+    'ko': 'kor',
+    'zh': 'zho',
+    'ru': 'rus',
+    'ar': 'ara',
+    'hi': 'hin',
+    'nl': 'nld',
+    'sv': 'swe',
+    'no': 'nor',
+    'da': 'dan',
+    'fi': 'fin',
+    'pl': 'pol',
+  };
+
+  bool _languageMatchesPreferred(
+    String? streamLanguage,
+    String preferredNormalized,
+    String preferredIso3,
+  ) {
+    final stream = _normalizeLanguage(streamLanguage);
+    if (stream.isEmpty || preferredNormalized.isEmpty) {
+      return false;
+    }
+    if (stream == preferredNormalized) {
+      return true;
+    }
+
+    final stream3 = _toIso3(stream);
+    return stream3.isNotEmpty && stream3 == preferredIso3;
+  }
+
+  String _normalizeLanguage(String? language) {
+    if (language == null) {
+      return '';
+    }
+    final normalized = language.trim().toLowerCase();
+    if (normalized.isEmpty) {
+      return '';
+    }
+    return normalized.split(RegExp(r'[-_]')).first;
+  }
+
+  String _toIso3(String language) {
+    if (language.length == 3) {
+      return language;
+    }
+    return _lang2To3[language] ?? language;
   }
 
   bool _hasTrailer(AggregatedItem item) {
@@ -2301,7 +3426,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
     if (trailerUrl.isEmpty) {
       if (!context.mounted) return;
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('No playable trailer found.')),
+        SnackBar(content: Text(AppLocalizations.of(context).noPlayableTrailerFound)),
       );
       return;
     }
@@ -2313,13 +3438,13 @@ class _ActionButtonsState extends State<_ActionButtons> {
     BuildContext context,
     List<Map<String, dynamic>> streams,
   ) async {
-    final currentIdx =
-        _selectedAudioIndex != null
-            ? streams.indexWhere((s) => s['Index'] == _selectedAudioIndex)
-            : streams.indexWhere((s) => s['IsDefault'] == true);
+    final effectiveAudioIndex = _effectiveAudioStreamIndex(streams);
+    final currentIdx = effectiveAudioIndex != null
+        ? streams.indexWhere((s) => s['Index'] == effectiveAudioIndex)
+        : streams.indexWhere((s) => s['IsDefault'] == true);
     final result = await TrackSelectorDialog.show(
       context,
-      title: 'Audio Track',
+      title: AppLocalizations.of(context).audioTrack,
       options:
           streams.map((s) {
             final display =
@@ -2358,13 +3483,14 @@ class _ActionButtonsState extends State<_ActionButtons> {
     Object error, {
     required String action,
   }) {
+    final l10n = AppLocalizations.of(context);
     if (error is DioException) {
       final status = error.response?.statusCode;
       if (status == 403) {
-        return 'Remote subtitle $action requires the Jellyfin subtitle management permission for this user.';
+        return l10n.remoteSubtitlePermissionError(action);
       }
       if (status == 404) {
-        return 'This item could not be found on the server for remote subtitle $action.';
+        return l10n.remoteSubtitleNotFoundError(action);
       }
 
       final data = error.response?.data;
@@ -2377,14 +3503,14 @@ class _ActionButtonsState extends State<_ActionButtons> {
       }
 
       if (detail != null && detail.isNotEmpty) {
-        return 'Remote subtitle $action failed: $detail';
+        return l10n.remoteSubtitleDetailError(action, detail);
       }
       if (status != null) {
-        return 'Remote subtitle $action failed (HTTP $status).';
+        return l10n.remoteSubtitleHttpError(action, status);
       }
     }
 
-    return 'Failed to $action remote subtitles.';
+    return l10n.remoteSubtitleGenericError(action);
   }
 
   String _remoteSubtitleLanguage(
@@ -2434,10 +3560,10 @@ class _ActionButtonsState extends State<_ActionButtons> {
       details.add('${rating.toStringAsFixed(1)}★');
     }
     if (downloadCount != null) {
-      details.add('${downloadCount.toInt()} downloads');
+      details.add(AppLocalizations.of(context).downloadsCount(downloadCount.toInt()));
     }
     if (isHashMatch) {
-      details.add('Perfect match');
+      details.add(AppLocalizations.of(context).perfectMatch);
     }
 
     return details.join(' | ');
@@ -2534,14 +3660,14 @@ class _ActionButtonsState extends State<_ActionButtons> {
     }
     if (results.isEmpty) {
       messenger.showSnackBar(
-        SnackBar(content: Text('No remote subtitles found for $language.')),
+        SnackBar(content: Text(AppLocalizations.of(context).noRemoteSubtitlesFound(language))),
       );
       return;
     }
 
     final result = await TrackSelectorDialog.show(
       context,
-      title: 'Download Subtitles',
+      title: AppLocalizations.of(context).downloadSubtitles,
       options:
           results.map((subtitle) {
             final label =
@@ -2563,7 +3689,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
     final subtitleId = results[result]['Id'] as String?;
     if (subtitleId == null || subtitleId.isEmpty) {
       messenger.showSnackBar(
-        const SnackBar(content: Text('The selected subtitle is invalid.')),
+        SnackBar(content: Text(AppLocalizations.of(context).selectedSubtitleInvalid)),
       );
       return;
     }
@@ -2597,7 +3723,7 @@ class _ActionButtonsState extends State<_ActionButtons> {
         messenger.showSnackBar(
           SnackBar(
             content: Text(
-              'Subtitle downloaded and selected: ${newStream['DisplayTitle'] as String? ?? newStream['Title'] as String? ?? newStream['Language'] as String? ?? 'Unknown'}',
+              AppLocalizations.of(context).subtitleDownloadedSelected(newStream['DisplayTitle'] as String? ?? newStream['Title'] as String? ?? newStream['Language'] as String? ?? 'Unknown'),
             ),
           ),
         );
@@ -2605,9 +3731,9 @@ class _ActionButtonsState extends State<_ActionButtons> {
       }
 
       messenger.showSnackBar(
-        const SnackBar(
+        SnackBar(
           content: Text(
-            'Subtitle downloaded. It may take a moment to appear while Jellyfin refreshes the item.',
+            AppLocalizations.of(context).subtitleDownloadedPending,
           ),
         ),
       );
@@ -2632,17 +3758,17 @@ class _ActionButtonsState extends State<_ActionButtons> {
     List<Map<String, dynamic>> audioStreams,
   ) async {
     final canDownloadRemote = _canDownloadRemoteSubtitles(item);
-    final currentIdx =
-        _selectedSubtitleIndex != null
-            ? (_selectedSubtitleIndex == -1
-                ? 0
-                : streams.indexWhere(
-                      (s) => s['Index'] == _selectedSubtitleIndex,
-                    ) +
-                    1)
-            : (streams.indexWhere((s) => s['IsDefault'] == true) + 1);
+    final effectiveSubtitleIndex = _effectiveSubtitleStreamIndex(streams);
+    final currentIdx = effectiveSubtitleIndex != null
+        ? (effectiveSubtitleIndex == -1
+            ? 0
+            : streams.indexWhere(
+                  (s) => s['Index'] == effectiveSubtitleIndex,
+                ) +
+                1)
+        : (streams.indexWhere((s) => s['IsDefault'] == true) + 1);
     final options = [
-      const TrackOption(label: 'None'),
+      TrackOption(label: AppLocalizations.of(context).none),
       ...streams.map((s) {
         final display =
             s['DisplayTitle'] as String? ??
@@ -2655,18 +3781,19 @@ class _ActionButtonsState extends State<_ActionButtons> {
     final downloadOptionIndex = canDownloadRemote ? options.length : null;
     if (canDownloadRemote) {
       options.add(
-        const TrackOption(
-          label: 'Download subtitles...',
-          subtitle: 'Search using the OpenSubtitles plugin',
+        TrackOption(
+          label: AppLocalizations.of(context).downloadSubtitlesLabel,
+          subtitle: AppLocalizations.of(context).searchOpenSubtitlesPlugin,
         ),
       );
     }
     final result = await TrackSelectorDialog.show(
       context,
-      title: 'Subtitle Track',
+      title: AppLocalizations.of(context).subtitleTrack,
       options: options,
       selectedIndex: currentIdx >= 0 ? currentIdx : 0,
     );
+    if (!context.mounted) return;
     if (result != null) {
       if (downloadOptionIndex != null && result == downloadOptionIndex) {
         await _downloadRemoteSubtitles(context, item, streams, audioStreams);
@@ -2692,12 +3819,12 @@ class _ActionButtonsState extends State<_ActionButtons> {
             : 0;
     final result = await TrackSelectorDialog.show(
       context,
-      title: 'Select Version',
+      title: AppLocalizations.of(context).selectVersion,
       options:
           sources.asMap().entries.map((entry) {
             final s = entry.value;
             final name =
-                s['Name'] as String? ?? 'Version ${entry.key + 1}';
+                s['Name'] as String? ?? AppLocalizations.of(context).versionNumber(entry.key + 1);
             final bitrate = s['Bitrate'] as int?;
             final container = s['Container'] as String?;
             final subtitle = [
@@ -2822,6 +3949,13 @@ String? _hdrFromStreams(List<Map<String, dynamic>> streams) {
   return hdr.toUpperCase();
 }
 
+String? _audioLabelFromStreams(List<Map<String, dynamic>> streams) {
+  final audio = streams.where((s) => s['Type'] == 'Audio').firstOrNull;
+  if (audio == null) return null;
+  return audioLabelFromProfileCodec(
+      audio['Profile'] as String?, audio['Codec'] as String?);
+}
+
 String? _codecFromStreams(List<Map<String, dynamic>> streams, String streamType) {
   final stream = streams.where((s) => s['Type'] == streamType).firstOrNull;
   final codec = stream?['Codec'] as String?;
@@ -2858,6 +3992,17 @@ bool _isReadableBookItem(AggregatedItem item) {
   return item.type == 'Book' && mediaType != 'Audio';
 }
 
+bool _isAudiobookCollectionItem(AggregatedItem item) {
+  if (item.type == 'AudioBook') return true;
+
+  final genres = (item.rawData['Genres'] as List?)
+      ?.whereType<String>()
+      .map((g) => g.toLowerCase())
+      .toList() ??
+      const <String>[];
+  return genres.any((g) => g.contains('audiobook') || g.contains('audio book'));
+}
+
 bool _isDownloadable(String? type) {
   return type == 'Movie' ||
       type == 'Audio' ||
@@ -2889,7 +4034,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
 
   String _originalQualitySubtitle(AggregatedItem item, {required bool isMulti}) {
     if (isMulti) {
-      return 'Original files, no re-encoding';
+      return AppLocalizations.of(context).originalFilesNoReencoding;
     }
 
     final mediaSource = item.mediaSources.isNotEmpty ? item.mediaSources.first : null;
@@ -2914,7 +4059,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
     }
 
     if (details.isEmpty) {
-      return 'Original file, no re-encoding';
+      return AppLocalizations.of(context).originalFileNoReencoding;
     }
 
     return details.join(' • ');
@@ -3018,7 +4163,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
 
         if (_isOffline || (progress != null && progress.isComplete)) {
           return _DetailActionButton(
-            label: 'Downloaded',
+            label: AppLocalizations.of(context).downloaded,
             icon: Icons.download_done,
             isActive: true,
             activeColor: const Color(0xFF4CAF50),
@@ -3027,7 +4172,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
         }
 
         return _DetailActionButton(
-          label: isMulti ? 'Download All' : 'Download',
+          label: isMulti ? AppLocalizations.of(context).downloadAll : AppLocalizations.of(context).download,
           icon: Icons.download,
           onPressed: () => _showQualityPicker(context, downloadService),
         );
@@ -3069,7 +4214,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
                 Padding(
                   padding: const EdgeInsets.fromLTRB(20, 16, 20, 8),
                   child: Text(
-                    isMulti ? 'Download All — Quality' : 'Download Quality',
+                    isMulti ? AppLocalizations.of(context).downloadAllQuality : AppLocalizations.of(context).downloadQuality,
                     style: Theme.of(context).textTheme.titleMedium?.copyWith(
                       color: Colors.white,
                       fontWeight: FontWeight.bold,
@@ -3130,7 +4275,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
         if (episodes.isEmpty) {
           ScaffoldMessenger.of(
             context,
-          ).showSnackBar(const SnackBar(content: Text('No episodes loaded')));
+          ).showSnackBar(SnackBar(content: Text(AppLocalizations.of(context).noEpisodesLoaded)));
           return;
         }
         service.downloadItems(episodes, quality: quality);
@@ -3140,7 +4285,7 @@ class _DownloadButtonState extends State<_DownloadButton> {
 
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
-        content: Text('Downloading ${item.name} (${quality.label})...'),
+        content: Text(AppLocalizations.of(context).downloadingItem(item.name, quality.label)),
         duration: const Duration(seconds: 2),
       ),
     );
@@ -3195,7 +4340,7 @@ class _DeleteDownloadButtonState extends State<_DeleteDownloadButton> {
     if (_checking || !_hasFiles) return const SizedBox.shrink();
 
     return _DetailActionButton(
-      label: 'Delete Files',
+      label: AppLocalizations.of(context).deleteFiles,
       icon: Icons.delete_outline,
       onPressed: () => _confirmDelete(context),
       isActive: true,
@@ -3205,37 +4350,37 @@ class _DeleteDownloadButtonState extends State<_DeleteDownloadButton> {
 
   Future<void> _confirmDelete(BuildContext context) async {
     final item = widget.item;
+    final l10n = AppLocalizations.of(context);
     final typeLabel = switch (item.type) {
-      'Series' =>
-        'all downloaded episodes for "${item.seriesName ?? item.name}"',
-      'Season' => 'all downloaded episodes in this season',
+      'Series' => l10n.deleteSeriesFiles(item.seriesName ?? item.name),
+      'Season' => l10n.deleteSeasonFiles,
       _ => '"${item.name}"',
     };
 
     final confirmed = await showDialog<bool>(
       context: context,
       builder:
-          (context) => AlertDialog(
+          (ctx) => AlertDialog(
             backgroundColor: const Color(0xFF1E1E1E),
-            title: const Text(
-              'Delete Downloaded Files',
-              style: TextStyle(color: Colors.white),
+            title: Text(
+              AppLocalizations.of(ctx).deleteDownloadedFiles,
+              style: const TextStyle(color: Colors.white),
             ),
             content: Text(
-              'Delete local files for $typeLabel?\n\nThis will free up storage space. You can re-download later.',
+              AppLocalizations.of(ctx).deleteLocalFilesMessage(typeLabel),
               style: TextStyle(color: Colors.white.withValues(alpha: 0.8)),
             ),
             actions: [
               TextButton(
-                onPressed: () => Navigator.pop(context, false),
-                child: const Text('Cancel'),
+                onPressed: () => Navigator.pop(ctx, false),
+                child: Text(AppLocalizations.of(ctx).cancel),
               ),
               TextButton(
-                onPressed: () => Navigator.pop(context, true),
+                onPressed: () => Navigator.pop(ctx, true),
                 style: TextButton.styleFrom(
                   foregroundColor: const Color(0xFFFF4757),
                 ),
-                child: const Text('Delete'),
+                child: Text(AppLocalizations.of(ctx).delete),
               ),
             ],
           ),
@@ -3248,7 +4393,7 @@ class _DeleteDownloadButtonState extends State<_DeleteDownloadButton> {
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
             content: Text(
-              success ? 'Downloaded files deleted' : 'Failed to delete files',
+              success ? l10n.downloadedFilesDeleted : l10n.failedToDeleteFiles,
             ),
             duration: const Duration(seconds: 2),
           ),
@@ -3689,7 +4834,7 @@ class _ChaptersRow extends StatelessWidget {
           final name =
               (chapter['Name'] as String?)?.trim().isNotEmpty == true
                   ? (chapter['Name'] as String)
-                  : 'Chapter ${index + 1}';
+                  : AppLocalizations.of(context).chapterNumber(index + 1);
           final imageTag = chapter['ImageTag'] as String?;
           final chapterImageUrl = imageApi.getChapterImageUrl(
             item.id,
@@ -3778,11 +4923,12 @@ class _MetadataSection extends StatelessWidget {
   Widget build(BuildContext context) {
     final item = viewModel.item!;
     final entries = <MapEntry<String, String>>[];
+    final l10n = AppLocalizations.of(context);
 
     if (viewModel.directors.isNotEmpty) {
       entries.add(
         MapEntry(
-          'DIRECTOR',
+          l10n.director,
           viewModel.directors.map((d) => d['Name'] as String).join(', '),
         ),
       );
@@ -3790,7 +4936,7 @@ class _MetadataSection extends StatelessWidget {
     if (viewModel.writers.isNotEmpty) {
       entries.add(
         MapEntry(
-          'WRITERS',
+          l10n.writers,
           viewModel.writers.map((w) => w['Name'] as String).join(', '),
         ),
       );
@@ -3799,9 +4945,9 @@ class _MetadataSection extends StatelessWidget {
       final studioNames = item.studios.map((s) => s['Name'] as String).toList();
       final display =
           studioNames.length > 5
-              ? '${studioNames.take(5).join(', ')} +${studioNames.length - 5} more'
+              ? '${studioNames.take(5).join(', ')} ${l10n.studioMoreCount(studioNames.length - 5)}'
               : studioNames.join(', ');
-      entries.add(MapEntry('STUDIO', display));
+      entries.add(MapEntry(l10n.studio, display));
     }
 
     if (entries.isEmpty) return const SizedBox.shrink();
@@ -4054,7 +5200,7 @@ class _SeasonsRow extends StatelessWidget {
     final total = season.childCount;
     final unplayed = season.unplayedItemCount;
     if (total == null) return null;
-    if (unplayed == null || unplayed == 0) return '$total Episodes';
+    if (unplayed == null || unplayed == 0) return '$total';
     final watched = total - unplayed;
     return '$watched / $total';
   }
@@ -4452,7 +5598,7 @@ class _EpisodeCardState extends State<_EpisodeCard> with FocusStateMixin {
                       children: [
                         Text(
                           [
-                            if (epNum != null) 'Episode $epNum',
+                            if (epNum != null) AppLocalizations.of(context).episodeLabel(epNum),
                             episode.name,
                           ].join(' - '),
                           style: Theme.of(context).textTheme.titleSmall?.copyWith(
@@ -4595,13 +5741,13 @@ class _PersonDates extends StatelessWidget {
 
     final parts = <String>[];
     if (birth != null) {
-      parts.add('Born ${_formatDate(birth)}');
+      parts.add(AppLocalizations.of(context).born(_formatDate(birth)));
     }
     if (death != null) {
-      parts.add('Died ${_formatDate(death)}');
+      parts.add(AppLocalizations.of(context).died(_formatDate(death)));
     } else if (birth != null) {
       final age = _calculateAge(birth);
-      if (age > 0) parts.add('Age $age');
+      if (age > 0) parts.add(AppLocalizations.of(context).age(age));
     }
 
     return Text(
@@ -4681,7 +5827,7 @@ class _ExpandableBiographyState extends State<_ExpandableBiography> {
         GestureDetector(
           onTap: () => setState(() => _expanded = !_expanded),
           child: Text(
-            _expanded ? 'Show Less' : 'Read More',
+            _expanded ? AppLocalizations.of(context).showLess : AppLocalizations.of(context).readMore,
             style: Theme.of(context).textTheme.bodySmall?.copyWith(
               color: const Color(0xFF00A4DC),
               fontWeight: FontWeight.w600,
@@ -4841,11 +5987,13 @@ class _ArtistHeader extends StatelessWidget {
 class _AlbumHeader extends StatelessWidget {
   final AggregatedItem item;
   final ImageApi imageApi;
+  final bool isAudiobook;
   final VoidCallback? onRenameRequested;
 
   const _AlbumHeader({
     required this.item,
     required this.imageApi,
+    this.isAudiobook = false,
     this.onRenameRequested,
   });
 
@@ -4923,7 +6071,7 @@ class _AlbumHeader extends StatelessWidget {
           ),
         ],
         const SizedBox(height: 8),
-        _AlbumMeta(item: item),
+        _AlbumMeta(item: item, isAudiobook: isAudiobook),
       ],
     );
 
@@ -4955,8 +6103,9 @@ class _AlbumHeader extends StatelessWidget {
 
 class _AlbumMeta extends StatelessWidget {
   final AggregatedItem item;
+  final bool isAudiobook;
 
-  const _AlbumMeta({required this.item});
+  const _AlbumMeta({required this.item, this.isAudiobook = false});
 
   @override
   Widget build(BuildContext context) {
@@ -4964,7 +6113,7 @@ class _AlbumMeta extends StatelessWidget {
     if (item.productionYear != null) parts.add(item.productionYear.toString());
     final songCount = item.childCount ?? item.recursiveItemCount;
     if (songCount != null) {
-      parts.add(songCount == 1 ? '1 track' : '$songCount tracks');
+      parts.add(isAudiobook ? AppLocalizations.of(context).chapterCount(songCount) : AppLocalizations.of(context).trackCount(songCount));
     }
     if (item.genres.isNotEmpty) {
       parts.add(item.genres.take(2).join(', '));
@@ -5027,6 +6176,7 @@ class _AlbumActions extends StatelessWidget {
     PlaybackManager manager,
     bool hasDownloadedTracks,
   ) {
+    final l10n = AppLocalizations.of(context);
     return Center(
       child: Wrap(
         spacing: 8,
@@ -5034,7 +6184,7 @@ class _AlbumActions extends StatelessWidget {
         alignment: WrapAlignment.center,
         children: [
           _DetailActionButton(
-            label: 'Play',
+            label: l10n.play,
             icon: Icons.play_arrow,
             onPressed: () {
               if (tracks.isEmpty) return;
@@ -5043,7 +6193,7 @@ class _AlbumActions extends StatelessWidget {
             },
           ),
           _DetailActionButton(
-            label: 'Shuffle',
+            label: l10n.shuffle,
             icon: Icons.shuffle,
             onPressed: () {
               if (tracks.isEmpty) return;
@@ -5054,25 +6204,25 @@ class _AlbumActions extends StatelessWidget {
           ),
           if (onDownloadAll != null)
             _DetailActionButton(
-              label: 'Download All',
+              label: l10n.downloadAll,
               icon: Icons.download,
               onPressed: onDownloadAll!,
             ),
           if (onDeleteDownloaded != null && hasDownloadedTracks)
             _DetailActionButton(
-              label: 'Delete Downloaded',
+              label: l10n.deleteDownloaded,
               icon: Icons.delete_sweep,
               onPressed: onDeleteDownloaded!,
             ),
           if (onDeletePlaylist != null)
             _DetailActionButton(
-              label: 'Delete',
+              label: l10n.delete,
               icon: Icons.delete_outline,
               onPressed: onDeletePlaylist!,
             ),
           if (showAddToPlaylist)
             _DetailActionButton(
-              label: 'Playlist',
+              label: l10n.playlist,
               icon: Icons.playlist_add,
               onPressed:
                   () => AddToPlaylistDialog.show(context, itemIds: [item.id]),
@@ -5142,6 +6292,7 @@ class _AlbumsRow extends StatelessWidget {
 
 class _TrackList extends StatelessWidget {
   final List<AggregatedItem> tracks;
+  final bool isAudiobook;
   final ValueChanged<int> onPlayTrack;
   final bool reorderable;
   final ReorderCallback? onReorder;
@@ -5151,6 +6302,7 @@ class _TrackList extends StatelessWidget {
 
   const _TrackList({
     required this.tracks,
+    this.isAudiobook = false,
     required this.onPlayTrack,
     this.reorderable = false,
     this.onReorder,
@@ -5183,6 +6335,7 @@ class _TrackList extends StatelessWidget {
             onRemoveFromPlaylist: onRemoveFromPlaylist,
             onMoveUp: onMoveUp,
             onMoveDown: onMoveDown,
+            isAudiobook: isAudiobook,
           );
         },
       );
@@ -5201,6 +6354,7 @@ class _TrackList extends StatelessWidget {
           onRemoveFromPlaylist: onRemoveFromPlaylist,
           onMoveUp: onMoveUp,
           onMoveDown: onMoveDown,
+          isAudiobook: isAudiobook,
         );
       }),
     );
@@ -5209,6 +6363,7 @@ class _TrackList extends StatelessWidget {
 
 class _TrackTile extends StatefulWidget {
   final AggregatedItem track;
+  final bool isAudiobook;
   final int index;
   final int currentIndex;
   final int totalCount;
@@ -5222,6 +6377,7 @@ class _TrackTile extends StatefulWidget {
   const _TrackTile({
     super.key,
     required this.track,
+    this.isAudiobook = false,
     required this.index,
     required this.currentIndex,
     required this.totalCount,
@@ -5304,6 +6460,9 @@ class _TrackTileState extends State<_TrackTile> with FocusStateMixin {
                         overflow: TextOverflow.ellipsis,
                       ),
                       () {
+                        if (widget.isAudiobook) {
+                          return const SizedBox.shrink();
+                        }
                         final artistText = widget.track.artists.isNotEmpty
                             ? widget.track.artists.join(', ')
                             : widget.track.albumArtist ?? '';
